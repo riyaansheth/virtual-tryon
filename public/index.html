@@ -571,14 +571,15 @@ const findNumber = (v) => {
 }
 
 async function loadCredits() {
-  const { ok } = await call('/api/_key').catch(() => ({ ok: false }))
+  const { ok, provider } = await call('/api/_key').catch(() => ({ ok: false }))
   $('keyDot').className = ok ? 'dot ok' : 'dot bad'
   $('keyText').textContent = ok ? 'ready' : 'no API key'
   if (!ok) {
     showAlert('Not configured', 'Add the API key on the server, then restart it.')
     return
   }
-  // Best effort — the balance is a nicety, not a health check.
+  // Only one provider reports a balance, and it is a nicety, not a health check.
+  if (provider !== 'fashn') return
   const n = findNumber(await call('/api/credits').catch(() => null))
   $('credits').hidden = n === null
   if (n !== null) $('creditsVal').textContent = n.toLocaleString()

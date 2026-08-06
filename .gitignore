@@ -1,3 +1,11 @@
+# Secrets — never commit these. .env.example is the tracked template.
 .env
+.env.*
+!.env.example
+
 node_modules/
+*.log
+npm-debug.log*
 .DS_Store
+.vscode/
+.idea/

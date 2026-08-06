@@ -15,8 +15,33 @@ which attaches `Authorization: Bearer $FASHN_API_KEY` and forwards to
 `https://api.fashn.ai/v1/*`.
 
 ```bash
-npm test                  # routing + missing-key guard
+npm test                  # access control, rate limiting, routing
 ```
+
+## Configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `FASHN_API_KEY` | — | Required. Server-side only. |
+| `ACCESS_PASSWORD` | unset (open) | Required before deploying. Basic auth on every route — the browser prompts; leave the username blank. |
+| `PORT` | `3000` | |
+| `RATE_LIMIT` | `20` | Generations per IP per window. Only `/api/run` is counted; it is the only route that spends credits. |
+| `RATE_WINDOW_MIN` | `10` | Window length in minutes. |
+| `TRUST_PROXY` | `0` | Set to `1` behind a proxy/load balancer so the limiter reads `X-Forwarded-For`. Leave `0` otherwise — the header is client-controlled and spoofable. |
+
+## Hosting
+
+The app is a plain Node process that reads `PORT`, so anything that runs
+`npm start` works: Render, Railway, Fly.io, a VPS behind Caddy or nginx.
+
+1. Set `FASHN_API_KEY` and `ACCESS_PASSWORD` as secrets in the platform's
+   dashboard. Never bake them into the repo or an image layer.
+2. Set `TRUST_PROXY=1` — every managed platform terminates TLS in front of you,
+   so without it every visitor looks like one IP and shares one rate limit.
+3. Build command: none. Start command: `npm start`. Node 22+.
+
+Without `ACCESS_PASSWORD`, anyone who finds the URL spends your credits. The
+rate limit caps the damage, it does not prevent it.
 
 ## Using it
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FASHN — Try-On Console</title>
+<title>Dizrupt Try-On</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,500;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -45,6 +45,8 @@ body::before {
   pointer-events: none;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
+/* Author display rules outrank the UA sheet's [hidden], so state it once here. */
+[hidden] { display: none !important; }
 :focus-visible { outline: 2px solid var(--violet-lit); outline-offset: 2px; }
 
 /* ---------- header ---------- */
@@ -369,8 +371,8 @@ select:hover, .num:hover, .prompt:hover { border-color: var(--line-lit); }
 <body>
 
 <header class="top">
-  <div class="mark">FASHN<span>.</span></div>
-  <div class="top-sub">Try-on console</div>
+  <div class="mark">Dizrupt<span>.</span></div>
+  <div class="top-sub">Try-on</div>
   <div class="top-right">
     <span class="pill" id="credits" hidden><b id="creditsVal">—</b> credits</span>
     <span class="pill"><i class="dot" id="keyDot"></i><span id="keyText">checking key</span></span>

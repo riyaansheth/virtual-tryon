@@ -72,7 +72,7 @@ export const handler = async (req, res) => {
 
   if (!authorized(req)) {
     return err(res, 401, 'Unauthorized', 'This console is password protected.', {
-      'www-authenticate': 'Basic realm="FASHN console", charset="UTF-8"',
+      'www-authenticate': 'Basic realm="Dizrupt Try-On", charset="UTF-8"',
     })
   }
 
@@ -123,7 +123,7 @@ export const start = (port = PORT) =>
 if (import.meta.filename === process.argv[1]) {
   start()
   console.log(
-    `FASHN console on http://localhost:${PORT}` +
+    `Dizrupt Try-On on http://localhost:${PORT}` +
       `\n  rate limit: ${RATE_LIMIT} generations / ${RATE_WINDOW / 60_000} min per IP` +
       `\n  access: ${PASSWORD ? 'password required' : 'open — set ACCESS_PASSWORD before deploying'}` +
       (KEY ? '' : '\n  ! FASHN_API_KEY is not set — copy .env.example to .env and add your key.'),

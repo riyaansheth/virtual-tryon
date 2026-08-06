@@ -1,6 +1,6 @@
-# FASHN Try-On Console
+# Dizrupt Try-On
 
-A local UI + thin server wrapper for the [FASHN](https://fashn.ai) virtual try-on API.
+A UI + thin server wrapper over the [FASHN](https://fashn.ai) virtual try-on API.
 Zero dependencies — Node's stdlib http server, one HTML file.
 
 ## Setup

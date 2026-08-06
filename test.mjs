@@ -24,7 +24,7 @@ assert.equal(wrong.status, 401, 'wrong password must not get in')
 // routing
 const page = await get('/', auth)
 assert.equal(page.status, 200)
-assert.match(await page.text(), /Try-on console/i, 'root should serve the console')
+assert.match(await page.text(), /Dizrupt Try-On/i, 'root should serve the console')
 assert.deepEqual(await (await get('/api/_key', auth)).json(), { ok: false })
 
 // rate limiting, then the missing-key guard behind it

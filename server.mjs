@@ -10,6 +10,8 @@ const PROVIDER = OPENAI_KEY ? 'openai' : 'fashn'
 const KEY = OPENAI_KEY || FASHN_KEY
 const PASSWORD = process.env.ACCESS_PASSWORD // set this before exposing the app to the internet
 const PORT = Number(process.env.PORT) || 3000
+// Behind a reverse proxy, set HOST=127.0.0.1 so the app is not reachable on :PORT directly.
+const HOST = process.env.HOST
 const TRUST_PROXY = process.env.TRUST_PROXY === '1'
 const RATE_LIMIT = Number(process.env.RATE_LIMIT) || 20
 const RATE_WINDOW = (Number(process.env.RATE_WINDOW_MIN) || 10) * 60_000
@@ -179,10 +181,10 @@ export const handler = async (req, res) => {
   }
 }
 
-export const start = (port = PORT) =>
+export const start = (port = PORT, host = HOST) =>
   createServer((req, res) =>
     handler(req, res).catch((e) => err(res, 500, 'ServerError', e.message)),
-  ).listen(port)
+  ).listen(port, host)
 
 if (import.meta.filename === process.argv[1]) {
   start()

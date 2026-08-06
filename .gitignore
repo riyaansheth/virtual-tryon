@@ -4,6 +4,7 @@
 !.env.example
 
 node_modules/
+.playwright-mcp/
 *.log
 npm-debug.log*
 .DS_Store

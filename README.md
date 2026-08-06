@@ -45,23 +45,17 @@ rate limit caps the damage, it does not prevent it.
 
 ## Using it
 
-Drop (or click, or paste) a person photo and a garment photo, pick a model, hit
-**Generate try-on**. The result lands in the mirror — drag the seam to wipe
-between the original photo and the try-on.
+Two steps: add the garment, add your photo, press **Generate**. The result lands
+in the mirror — drag the seam to wipe between the original photo and the try-on.
+Pressing Generate again re-runs with a fresh seed for a different attempt.
+
+No settings are exposed. Every run uses `tryon-v1.6` with auto category, auto
+garment-shot detection, balanced mode, segmentation-free on, one PNG out. If you
+ever need the knobs back (4K via `tryon-max`, category overrides, multiple
+samples), they are a few lines in `public/index.html` — see the `inputs` object.
 
 Inputs larger than 1536px are downscaled in the browser before upload. Small PNGs
 pass through untouched so transparent flat-lays keep their alpha.
-
-## Models
-
-| | `tryon-v1.6` | `tryon-max` |
-|---|---|---|
-| Garment field | `garment_image` | `product_image` |
-| Controls | category, mode, garment shot type, moderation, segmentation-free | prompt, resolution (1K/2K/4K), generation mode |
-| Output | up to 4 (`num_samples`) | up to 4 (`num_images`) |
-
-Both post to `POST /v1/run` with `{ model_name, inputs }` and are polled at
-`GET /v1/status/{id}` until `completed` or `failed`.
 
 ## Server routes
 

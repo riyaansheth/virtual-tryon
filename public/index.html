@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FASHN — Try-On Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,500;12..96,700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --ink: #06050a;
+  --panel: #0d0a15;
+  --panel-lit: #15101f;
+  --line: rgba(168, 132, 255, .16);
+  --line-lit: rgba(168, 132, 255, .38);
+  --violet: #8b5cf6;
+  --violet-lit: #c084fc;
+  --violet-deep: #3b1178;
+  --white: #fff;
+  --muted: #978ead;
+  --display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
+  --body: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, monospace;
+  --rail: 340px;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--white);
+  font: 400 15px/1.5 var(--body);
+  -webkit-font-smoothing: antialiased;
+}
+/* the seam motif: a single violet meridian behind everything */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(70vw 60vh at 78% -10%, rgba(139, 92, 246, .18), transparent 65%),
+    radial-gradient(50vw 50vh at 0% 110%, rgba(59, 17, 120, .35), transparent 60%);
+  pointer-events: none;
+}
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--violet-lit); outline-offset: 2px; }
+
+/* ---------- header ---------- */
+.top {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 22px 28px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.mark {
+  font: 700 22px/1 var(--display);
+  letter-spacing: -.03em;
+}
+.mark span { color: var(--violet-lit); }
+.top-sub {
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  font: 500 12px/1 var(--mono);
+  color: var(--muted);
+}
+.pill b { color: var(--white); font-weight: 500; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.dot.ok { background: var(--violet-lit); box-shadow: 0 0 10px var(--violet); }
+.dot.bad { background: #f0567c; box-shadow: 0 0 10px rgba(240, 86, 124, .7); }
+
+/* ---------- layout ---------- */
+.work {
+  position: relative;
+  display: grid;
+  grid-template-columns: var(--rail) 1fr;
+  gap: 0;
+  height: calc(100% - 63px);
+}
+.rail {
+  border-right: 1px solid var(--line);
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.stage {
+  position: relative;
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+}
+
+/* ---------- inputs ---------- */
+.slots { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.slot { position: relative; display: flex; flex-direction: column; gap: 7px; }
+.drop {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border: 1px dashed var(--line-lit);
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--panel-lit), var(--panel));
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color .18s, background .18s, transform .18s;
+}
+.drop:hover, .drop.over { border-color: var(--violet-lit); background: var(--panel-lit); }
+.drop.over { transform: scale(1.015); }
+.drop.filled { border-style: solid; border-color: var(--line); }
+.cue {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  text-align: center;
+  padding: 10px;
+  pointer-events: none;
+}
+.cue-name { font: 500 12px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; }
+.cue-hint { font-size: 11px; color: var(--muted); line-height: 1.35; }
+.thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity .25s;
+}
+.drop.filled .thumb { opacity: 1; }
+.drop.filled .cue { display: none; }
+.clear {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(6, 5, 10, .78);
+  color: var(--white);
+  cursor: pointer;
+  line-height: 1;
+  display: none;
+}
+.drop.filled + .clear { display: block; }
+.url {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  font-size: 11px;
+  color: var(--white);
+}
+.url::placeholder { color: #6d6483; }
+
+/* ---------- fields ---------- */
+.group { display: flex; flex-direction: column; gap: 11px; }
+.legend {
+  font: 500 10px/1 var(--mono);
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.legend::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.field { display: grid; gap: 5px; }
+.field > label { font-size: 11px; color: var(--muted); }
+select, .num, .prompt {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--white);
+  font-size: 13px;
+  appearance: none;
+}
+select { background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: right 14px center, right 9px center; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; padding-right: 28px; }
+select:hover, .num:hover, .prompt:hover { border-color: var(--line-lit); }
+.prompt { resize: vertical; min-height: 58px; font-size: 12px; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.toggle { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.toggle input { accent-color: var(--violet); width: 15px; height: 15px; }
+
+/* model switch */
+.switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+.switch button {
+  padding: 9px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 12px/1.35 var(--body);
+  cursor: pointer;
+  transition: background .18s, color .18s;
+}
+.switch button small { display: block; font: 400 10px/1.3 var(--mono); opacity: .7; margin-top: 3px; }
+.switch button[aria-pressed="true"] { background: linear-gradient(160deg, var(--violet), var(--violet-deep)); color: var(--white); }
+
+/* run */
+.run {
+  width: 100%;
+  padding: 14px;
+  border: 0;
+  border-radius: 11px;
+  background: linear-gradient(100deg, var(--violet-deep), var(--violet) 45%, var(--violet-lit));
+  background-size: 200% 100%;
+  color: var(--white);
+  font: 600 14px/1 var(--body);
+  letter-spacing: .01em;
+  cursor: pointer;
+  transition: background-position .5s, opacity .2s;
+}
+.run:hover { background-position: 100% 0; }
+.run:disabled { opacity: .4; cursor: not-allowed; }
+.note { font-size: 11px; color: var(--muted); text-align: center; }
+
+/* ---------- stage ---------- */
+.stage-bar { display: flex; align-items: center; gap: 12px; min-height: 28px; }
+.status { font: 400 12px/1 var(--mono); color: var(--muted); }
+.status b { color: var(--violet-lit); font-weight: 500; }
+.stage-actions { margin-left: auto; display: flex; gap: 8px; }
+.ghost {
+  padding: 8px 13px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--white);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.ghost:hover { border-color: var(--line-lit); background: var(--panel-lit); }
+.ghost[hidden] { display: none; }
+
+.canvas {
+  flex: 1;
+  min-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, var(--panel-lit), var(--panel)),
+    var(--panel);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+/* empty state: the seam */
+.empty { text-align: center; padding: 40px 20px; display: grid; gap: 14px; justify-items: center; }
+.empty-seam { width: 1px; height: 88px; background: linear-gradient(180deg, transparent, var(--violet-lit), transparent); }
+.empty h2 { font: 300 30px/1.15 var(--display); letter-spacing: -.02em; margin: 0; max-width: 15ch; }
+.empty p { margin: 0; color: var(--muted); font-size: 13px; max-width: 34ch; }
+
+/* the compare mirror */
+.compare {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  width: min(100%, 620px);
+  user-select: none;
+  touch-action: none;
+  cursor: ew-resize;
+  --x: 50%;
+}
+.compare img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.compare .before { clip-path: inset(0 calc(100% - var(--x)) 0 0); }
+.seam {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--x);
+  width: 1px;
+  background: var(--violet-lit);
+  box-shadow: 0 0 16px 1px rgba(192, 132, 252, .55);
+}
+.grip {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 30px;
+  height: 30px;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 1px solid var(--violet-lit);
+  border-radius: 7px;
+  background: rgba(6, 5, 10, .8);
+  backdrop-filter: blur(4px);
+}
+.tag {
+  position: absolute;
+  bottom: 10px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(6, 5, 10, .72);
+  border: 1px solid var(--line);
+  font: 500 10px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.tag.l { left: 10px; }
+.tag.r { right: 10px; color: var(--violet-lit); }
+
+/* working state */
+.working { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(6, 5, 10, .7); backdrop-filter: blur(2px); }
+.working .bar { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--violet-lit); box-shadow: 0 0 24px 2px rgba(192, 132, 252, .6); animation: sweep 2.4s ease-in-out infinite; }
+.working .label { font: 500 11px/1 var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--violet-lit); }
+@keyframes sweep { 0%, 100% { left: 8%; } 50% { left: 92%; } }
+
+.strip { display: flex; gap: 8px; flex-wrap: wrap; }
+.strip img { width: 58px; height: 78px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); cursor: pointer; opacity: .55; transition: opacity .2s, border-color .2s; }
+.strip img:hover { opacity: .85; }
+.strip img[aria-current="true"] { opacity: 1; border-color: var(--violet-lit); }
+
+.alert {
+  padding: 12px 14px;
+  border: 1px solid rgba(240, 86, 124, .45);
+  border-radius: 11px;
+  background: rgba(240, 86, 124, .09);
+  font-size: 13px;
+  color: #ffd8e1;
+}
+.alert b { display: block; font: 500 11px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: #f0567c; margin-bottom: 6px; }
+.alert[hidden] { display: none; }
+
+@media (max-width: 900px) {
+  .work { grid-template-columns: 1fr; height: auto; }
+  .rail { border-right: 0; border-bottom: 1px solid var(--line); }
+  .canvas { min-height: 60vh; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="mark">FASHN<span>.</span></div>
+  <div class="top-sub">Try-on console</div>
+  <div class="top-right">
+    <span class="pill" id="credits" hidden><b id="creditsVal">—</b> credits</span>
+    <span class="pill"><i class="dot" id="keyDot"></i><span id="keyText">checking key</span></span>
+  </div>
+</header>
+
+<main class="work">
+  <aside class="rail">
+    <div class="group">
+      <div class="legend">Inputs</div>
+      <div class="slots">
+        <div class="slot">
+          <div class="drop" id="dropModel" tabindex="0" role="button" aria-label="Model image">
+            <img class="thumb" id="thumbModel" alt="">
+            <div class="cue"><span class="cue-name">Model</span><span class="cue-hint">drop, click or paste a person</span></div>
+          </div>
+          <button class="clear" data-clear="model" aria-label="Remove model image">✕</button>
+          <input class="url" id="urlModel" type="url" placeholder="or an image URL">
+        </div>
+        <div class="slot">
+          <div class="drop" id="dropGarment" tabindex="0" role="button" aria-label="Garment image">
+            <img class="thumb" id="thumbGarment" alt="">
+            <div class="cue"><span class="cue-name">Garment</span><span class="cue-hint">flat-lay or on-model</span></div>
+          </div>
+          <button class="clear" data-clear="garment" aria-label="Remove garment image">✕</button>
+          <input class="url" id="urlGarment" type="url" placeholder="or an image URL">
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="legend">Model</div>
+      <div class="switch" role="group" aria-label="Try-on model">
+        <button type="button" data-model="tryon-v1.6" aria-pressed="true">v1.6<small>fast, tuned</small></button>
+        <button type="button" data-model="tryon-max" aria-pressed="false">Max<small>up to 4K</small></button>
+      </div>
+    </div>
+
+    <div class="group" id="fields-v16">
+      <div class="legend">Settings</div>
+      <div class="field">
+        <label for="category">Category</label>
+        <select id="category">
+          <option value="auto" selected>Auto-detect</option>
+          <option value="tops">Tops</option>
+          <option value="bottoms">Bottoms</option>
+          <option value="one-pieces">One-pieces</option>
+        </select>
+      </div>
+      <div class="pair">
+        <div class="field">
+          <label for="mode">Mode</label>
+          <select id="mode">
+            <option value="performance">Performance</option>
+            <option value="balanced" selected>Balanced</option>
+            <option value="quality">Quality</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="photoType">Garment shot</label>
+          <select id="photoType">
+            <option value="auto" selected>Auto</option>
+            <option value="flat-lay">Flat-lay</option>
+            <option value="model">On model</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="moderation">Moderation</label>
+        <select id="moderation">
+          <option value="conservative">Conservative</option>
+          <option value="permissive" selected>Permissive</option>
+          <option value="none">None</option>
+        </select>
+      </div>
+      <label class="toggle"><input type="checkbox" id="segFree" checked> Segmentation-free</label>
+    </div>
+
+    <div class="group" id="fields-max" hidden>
+      <div class="legend">Settings</div>
+      <div class="field">
+        <label for="prompt">Prompt <span style="opacity:.6">(optional)</span></label>
+        <textarea class="prompt" id="prompt" placeholder="e.g. tuck in the shirt"></textarea>
+      </div>
+      <div class="pair">
+        <div class="field">
+          <label for="resolution">Resolution</label>
+          <select id="resolution">
+            <option value="1k" selected>1K</option>
+            <option value="2k">2K</option>
+            <option value="4k">4K</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="genMode">Mode</label>
+          <select id="genMode">
+            <option value="" selected>Auto</option>
+            <option value="fast">Fast</option>
+            <option value="balanced">Balanced</option>
+            <option value="quality">Quality</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="legend">Output</div>
+      <div class="pair">
+        <div class="field">
+          <label for="samples">Images</label>
+          <select id="samples">
+            <option>1</option><option>2</option><option>3</option><option>4</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="format">Format</label>
+          <select id="format"><option value="png" selected>PNG</option><option value="jpeg">JPEG</option></select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="seed">Seed</label>
+        <input class="num" id="seed" type="number" min="0" max="4294967295" value="42">
+      </div>
+    </div>
+
+    <button class="run" id="run" disabled>Add both images to start</button>
+    <p class="note">Credits are charged per generated image. Failed runs cost nothing.</p>
+  </aside>
+
+  <section class="stage">
+    <div class="stage-bar">
+      <span class="status" id="status">Idle</span>
+      <div class="stage-actions">
+        <button class="ghost" id="copy" hidden>Copy URL</button>
+        <a class="ghost" id="open" hidden target="_blank" rel="noopener">Open image ↗</a>
+      </div>
+    </div>
+
+    <div class="alert" id="alert" hidden></div>
+
+    <div class="canvas" id="canvas">
+      <div class="empty" id="empty">
+        <div class="empty-seam"></div>
+        <h2>Put the garment on the person.</h2>
+        <p>Add a model photo and a garment, then pull the seam to compare what changed.</p>
+      </div>
+    </div>
+
+    <div class="strip" id="strip"></div>
+  </section>
+</main>
+
+<script type="module">
+const $ = (id) => document.getElementById(id)
+const MAX_EDGE = 1536
+
+const state = { model: null, garment: null, modelName: 'tryon-v1.6', outputs: [], shown: 0 }
+
+/* ---------- image intake ---------- */
+const shrink = (file) => new Promise((resolve, reject) => {
+  // Small PNGs go through untouched so transparent flat-lays keep their alpha.
+  if (file.type === 'image/png' && file.size < 4e6) return resolve(readAsDataURL(file))
+  const img = new Image()
+  img.onload = () => {
+    const scale = Math.min(1, MAX_EDGE / Math.max(img.width, img.height))
+    const c = Object.assign(document.createElement('canvas'), {
+      width: Math.round(img.width * scale),
+      height: Math.round(img.height * scale),
+    })
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+    URL.revokeObjectURL(img.src)
+    resolve(c.toDataURL('image/jpeg', 0.92))
+  }
+  img.onerror = () => reject(new Error(`${file.name || 'That file'} is not a readable image`))
+  img.src = URL.createObjectURL(file)
+})
+
+const readAsDataURL = (file) => new Promise((resolve, reject) => {
+  const r = new FileReader()
+  r.onload = () => resolve(r.result)
+  r.onerror = () => reject(new Error('Could not read that file'))
+  r.readAsDataURL(file)
+})
+
+async function setSlot(which, value) {
+  state[which] = value
+  const drop = $(which === 'model' ? 'dropModel' : 'dropGarment')
+  const thumb = $(which === 'model' ? 'thumbModel' : 'thumbGarment')
+  thumb.src = value || ''
+  drop.classList.toggle('filled', Boolean(value))
+  syncRun()
+}
+
+async function takeFile(which, file) {
+  if (!file || !file.type.startsWith('image/')) return
+  try {
+    await setSlot(which, await shrink(file))
+    hideAlert()
+  } catch (err) {
+    showAlert('Image rejected', err.message)
+  }
+}
+
+for (const [which, dropId, urlId] of [['model', 'dropModel', 'urlModel'], ['garment', 'dropGarment', 'urlGarment']]) {
+  const drop = $(dropId)
+  const pick = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*' })
+  pick.onchange = () => takeFile(which, pick.files[0])
+  drop.addEventListener('click', () => pick.click())
+  drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick.click() } })
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over') })
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'))
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault()
+    drop.classList.remove('over')
+    takeFile(which, e.dataTransfer.files[0])
+  })
+  $(urlId).addEventListener('change', (e) => setSlot(which, e.target.value.trim() || null))
+}
+
+document.querySelectorAll('[data-clear]').forEach((btn) =>
+  btn.addEventListener('click', () => {
+    const which = btn.dataset.clear
+    $(which === 'model' ? 'urlModel' : 'urlGarment').value = ''
+    setSlot(which, null)
+  }))
+
+// Paste an image or a URL straight into the first empty slot.
+window.addEventListener('paste', (e) => {
+  const which = state.model ? (state.garment ? null : 'garment') : 'model'
+  if (!which) return
+  const file = [...e.clipboardData.files][0]
+  if (file) return takeFile(which, file)
+  const text = e.clipboardData.getData('text').trim()
+  if (/^https?:\/\//.test(text)) {
+    $(which === 'model' ? 'urlModel' : 'urlGarment').value = text
+    setSlot(which, text)
+  }
+})
+
+/* ---------- model switch ---------- */
+document.querySelectorAll('[data-model]').forEach((btn) =>
+  btn.addEventListener('click', () => {
+    state.modelName = btn.dataset.model
+    document.querySelectorAll('[data-model]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)))
+    const isMax = state.modelName === 'tryon-max'
+    $('fields-v16').hidden = isMax
+    $('fields-max').hidden = !isMax
+  }))
+
+/* ---------- run ---------- */
+const syncRun = () => {
+  const ready = Boolean(state.model && state.garment)
+  $('run').disabled = !ready
+  if (!$('run').dataset.busy) $('run').textContent = ready ? 'Generate try-on' : 'Add both images to start'
+}
+
+const showAlert = (title, msg) => {
+  $('alert').hidden = false
+  $('alert').innerHTML = `<b></b><span></span>`
+  $('alert').querySelector('b').textContent = title
+  $('alert').querySelector('span').textContent = msg
+}
+const hideAlert = () => { $('alert').hidden = true }
+
+const buildInputs = () => {
+  const shared = {
+    seed: Number($('seed').value) || 0,
+    output_format: $('format').value,
+  }
+  if (state.modelName === 'tryon-max') {
+    const genMode = $('genMode').value
+    return {
+      model_image: state.model,
+      product_image: state.garment,
+      ...($('prompt').value.trim() ? { prompt: $('prompt').value.trim() } : {}),
+      resolution: $('resolution').value,
+      ...(genMode ? { generation_mode: genMode } : {}),
+      num_images: Number($('samples').value),
+      ...shared,
+    }
+  }
+  return {
+    model_image: state.model,
+    garment_image: state.garment,
+    category: $('category').value,
+    mode: $('mode').value,
+    garment_photo_type: $('photoType').value,
+    moderation_level: $('moderation').value,
+    segmentation_free: $('segFree').checked,
+    num_samples: Number($('samples').value),
+    ...shared,
+  }
+}
+
+const post = async (path, body) => {
+  const res = await fetch(path, {
+    method: body ? 'POST' : 'GET',
+    headers: { 'content-type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  const data = await res.json().catch(() => ({ error: 'BadResponse', message: `HTTP ${res.status}` }))
+  if (!res.ok || (typeof data.error === 'string' && data.error)) {
+    throw new Error(data.message || data.error || `HTTP ${res.status}`)
+  }
+  return data
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+$('run').addEventListener('click', async () => {
+  hideAlert()
+  const btn = $('run')
+  btn.disabled = true
+  btn.dataset.busy = '1'
+  btn.textContent = 'Working…'
+  showWorking('submitting')
+  const started = Date.now()
+  const tick = setInterval(() => {
+    $('status').innerHTML = `<b>${$('status').dataset.phase || 'running'}</b> · ${((Date.now() - started) / 1000).toFixed(0)}s`
+  }, 200)
+
+  try {
+    const { id } = await post('/api/run', { model_name: state.modelName, inputs: buildInputs() })
+    let out
+    while (true) {
+      await sleep(1500)
+      const res = await post(`/api/status/${id}`)
+      $('status').dataset.phase = res.status
+      showWorking(res.status)
+      if (res.status === 'completed') { out = res.output || []; break }
+      if (res.status === 'failed') throw new Error(res.error?.message || 'The prediction failed')
+    }
+    if (!out.length) throw new Error('The prediction completed without an image')
+    state.outputs = out
+    show(0)
+    $('status').innerHTML = `<b>completed</b> · ${((Date.now() - started) / 1000).toFixed(1)}s · ${out.length} image${out.length > 1 ? 's' : ''}`
+    loadCredits()
+  } catch (err) {
+    showAlert('Run failed', err.message)
+    $('status').textContent = 'Idle'
+    $('canvas').replaceChildren(emptyState())
+  } finally {
+    clearInterval(tick)
+    delete btn.dataset.busy
+    delete $('status').dataset.phase
+    syncRun()
+  }
+})
+
+/* ---------- stage rendering ---------- */
+function emptyState() {
+  const el = document.createElement('div')
+  el.className = 'empty'
+  el.innerHTML = `<div class="empty-seam"></div>
+    <h2>Put the garment on the person.</h2>
+    <p>Add a model photo and a garment, then pull the seam to compare what changed.</p>`
+  return el
+}
+
+function showWorking(phase) {
+  const el = document.createElement('div')
+  el.className = 'working'
+  el.innerHTML = `<div class="bar"></div><div class="label"></div>`
+  el.querySelector('.label').textContent = phase.replace('_', ' ')
+  const canvas = $('canvas')
+  const existing = canvas.querySelector('.working')
+  if (existing) existing.querySelector('.label').textContent = phase.replace('_', ' ')
+  else canvas.replaceChildren(el)
+}
+
+function show(i) {
+  state.shown = i
+  const url = state.outputs[i]
+  const box = document.createElement('div')
+  box.className = 'compare'
+  box.innerHTML = `<img class="after" alt="Try-on result"><img class="before" alt="Original model photo">
+    <div class="seam"><span class="grip"></span></div>
+    <span class="tag l">Before</span><span class="tag r">After</span>`
+  const after = box.querySelector('.after')
+  after.src = url
+  box.querySelector('.before').src = state.model
+  after.onload = () => { box.style.aspectRatio = `${after.naturalWidth} / ${after.naturalHeight}` }
+
+  const at = (clientX) => {
+    const r = box.getBoundingClientRect()
+    box.style.setProperty('--x', `${Math.min(100, Math.max(0, ((clientX - r.left) / r.width) * 100)).toFixed(2)}%`)
+  }
+  box.addEventListener('pointerdown', (e) => { box.setPointerCapture(e.pointerId); at(e.clientX) })
+  box.addEventListener('pointermove', (e) => { if (box.hasPointerCapture(e.pointerId)) at(e.clientX) })
+
+  $('canvas').replaceChildren(box)
+  $('open').hidden = false
+  $('open').href = url
+  $('copy').hidden = false
+
+  $('strip').replaceChildren(...state.outputs.map((src, n) => {
+    const t = document.createElement('img')
+    t.src = src
+    t.alt = `Result ${n + 1}`
+    t.setAttribute('aria-current', String(n === i))
+    t.addEventListener('click', () => show(n))
+    return t
+  }))
+  if (state.outputs.length < 2) $('strip').replaceChildren()
+}
+
+$('copy').addEventListener('click', async () => {
+  await navigator.clipboard.writeText(state.outputs[state.shown])
+  $('copy').textContent = 'Copied'
+  setTimeout(() => { $('copy').textContent = 'Copy URL' }, 1400)
+})
+
+/* ---------- key + credits ---------- */
+const findNumber = (v) => {
+  if (typeof v === 'number') return v
+  if (v && typeof v === 'object') for (const x of Object.values(v)) { const n = findNumber(x); if (n !== null) return n }
+  return null
+}
+
+async function loadCredits() {
+  const { ok } = await post('/api/_key').catch(() => ({ ok: false }))
+  $('keyDot').className = ok ? 'dot ok' : 'dot bad'
+  $('keyText').textContent = ok ? 'key active' : 'no API key'
+  if (!ok) {
+    showAlert('API key not configured', 'Copy .env.example to .env, paste your key from app.fashn.ai/api, then restart the server.')
+    return
+  }
+  // Best effort — the balance is a nicety, not a health check.
+  const n = findNumber(await post('/api/credits').catch(() => null))
+  $('credits').hidden = n === null
+  if (n !== null) $('creditsVal').textContent = n.toLocaleString()
+}
+loadCredits()
+syncRun()
+</script>
+</body>
+</html>

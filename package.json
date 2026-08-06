@@ -1,0 +1,14 @@
+{
+  "name": "fashn-console",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A local console for the FASHN virtual try-on API. Zero dependencies.",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.mjs",
+    "test": "node test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

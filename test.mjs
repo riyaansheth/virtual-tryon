@@ -2,7 +2,9 @@
 // Run with: npm test   (deliberately runs WITHOUT .env loaded, so no key is set)
 import assert from 'node:assert/strict'
 
-assert.equal(process.env.FASHN_API_KEY, undefined, 'run this without FASHN_API_KEY set')
+for (const k of ['FASHN_API_KEY', 'OPENAI_API_KEY']) {
+  assert.equal(process.env[k], undefined, `run this without ${k} set`)
+}
 
 process.env.ACCESS_PASSWORD = 'open-sesame'
 process.env.RATE_LIMIT = '2'
@@ -25,7 +27,7 @@ assert.equal(wrong.status, 401, 'wrong password must not get in')
 const page = await get('/', auth)
 assert.equal(page.status, 200)
 assert.match(await page.text(), /Dizrupt Try-On/i, 'root should serve the console')
-assert.deepEqual(await (await get('/api/_key', auth)).json(), { ok: false })
+assert.deepEqual(await (await get('/api/_key', auth)).json(), { ok: false, provider: 'fashn' })
 
 // rate limiting, then the missing-key guard behind it
 for (const attempt of [1, 2]) {
@@ -39,4 +41,24 @@ assert.equal((await limited.json()).error, 'RateLimited')
 assert.ok(limited.headers.get('retry-after'), 'clients need retry-after')
 
 server.close()
-console.log('ok — 12 checks passed')
+
+// Provider selection is read at import time, so it needs a fresh process.
+const { execFileSync } = await import('node:child_process')
+const child = execFileSync(
+  process.execPath,
+  ['--input-type=module', '-e', `
+    const { start } = await import(${JSON.stringify(new URL('./server.mjs', import.meta.url).href)})
+    const s = start(0)
+    const base = 'http://localhost:' + s.address().port
+    const key = await (await fetch(base + '/api/_key')).json()
+    const polled = await fetch(base + '/api/status/abc')
+    console.log(JSON.stringify({ key, polledStatus: polled.status }))
+    s.close()
+  `],
+  { env: { ...process.env, ACCESS_PASSWORD: '', OPENAI_API_KEY: 'sk-not-a-real-key' }, encoding: 'utf8' },
+)
+const openai = JSON.parse(child)
+assert.deepEqual(openai.key, { ok: true, provider: 'openai' }, 'an OpenAI key must win over no FASHN key')
+assert.equal(openai.polledStatus, 404, 'the synchronous provider has nothing to poll')
+
+console.log('ok — 15 checks passed')

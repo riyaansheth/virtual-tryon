@@ -475,7 +475,7 @@ $('run').addEventListener('click', async () => {
   try {
     // Tuned defaults, deliberately not exposed: auto category, balanced mode,
     // one image. A fresh seed each run so "generate again" actually differs.
-    const { id } = await call('/api/run', {
+    const started_ = await call('/api/run', {
       model_name: 'tryon-v1.6',
       inputs: {
         model_image: state.model,
@@ -491,10 +491,11 @@ $('run').addEventListener('click', async () => {
       },
     })
 
-    let output
-    while (true) {
+    // Some providers answer straight away; others hand back an id to poll.
+    let output = started_.status === 'completed' ? (started_.output || [])[0] : null
+    while (!output) {
       await sleep(1500)
-      const res = await call(`/api/status/${id}`)
+      const res = await call(`/api/status/${started_.id}`)
       $('status').dataset.phase = res.status
       showWorking(res.status)
       if (res.status === 'completed') { output = (res.output || [])[0]; break }

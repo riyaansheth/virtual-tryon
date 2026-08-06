@@ -2,7 +2,12 @@ import { createServer } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { createHash, timingSafeEqual } from 'node:crypto'
 
-const KEY = process.env.FASHN_API_KEY
+const FASHN_KEY = process.env.FASHN_API_KEY
+const OPENAI_KEY = process.env.OPENAI_API_KEY
+const OPENAI_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
+// An OpenAI key wins when both are present, so switching back is one line in .env.
+const PROVIDER = OPENAI_KEY ? 'openai' : 'fashn'
+const KEY = OPENAI_KEY || FASHN_KEY
 const PASSWORD = process.env.ACCESS_PASSWORD // set this before exposing the app to the internet
 const PORT = Number(process.env.PORT) || 3000
 const TRUST_PROXY = process.env.TRUST_PROXY === '1'
@@ -67,6 +72,57 @@ const readBody = (req) =>
     req.on('error', reject)
   })
 
+/* ---------- OpenAI provider ---------- */
+// gpt-image-* has no try-on mode; it re-renders the photo from a prompt, so the
+// wording below leans hard on preserving everything except the clothing.
+const TRY_ON_PROMPT = [
+  'Dress the person in the first image in the garment shown in the second image.',
+  "Keep the person's face, hair, body shape, pose, skin tone and the background exactly as they are.",
+  'Replace only the clothing item that the garment corresponds to.',
+  "Reproduce the garment's colour, pattern, print, texture, neckline and cut faithfully.",
+  'Photorealistic result, with lighting and shadows consistent with the original photo.',
+].join(' ')
+
+const toBlob = async (src) => {
+  if (src.startsWith('data:')) {
+    const [meta, base64] = src.split(',')
+    return new Blob([Buffer.from(base64, 'base64')], { type: meta.slice(5).split(';')[0] || 'image/png' })
+  }
+  const r = await fetch(src)
+  if (!r.ok) throw new Error(`Could not load that image (HTTP ${r.status})`)
+  return r.blob()
+}
+
+const openaiRun = async (req, res) => {
+  const { inputs = {} } = JSON.parse(await readBody(req))
+  if (!inputs.model_image || !inputs.garment_image) {
+    return err(res, 400, 'MissingImage', 'Both photos are required.')
+  }
+
+  const form = new FormData()
+  form.append('model', OPENAI_MODEL)
+  form.append('prompt', TRY_ON_PROMPT)
+  form.append('image[]', await toBlob(inputs.model_image), 'person.png')
+  form.append('image[]', await toBlob(inputs.garment_image), 'garment.png')
+
+  const upstream = await fetch('https://api.openai.com/v1/images/edits', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${OPENAI_KEY}` },
+    body: form,
+  })
+  const data = await upstream.json().catch(() => ({}))
+  if (!upstream.ok) {
+    return err(res, upstream.status, 'ImageError', data.error?.message || `HTTP ${upstream.status}`)
+  }
+
+  const image = data.data?.[0] || {}
+  const output = image.b64_json ? `data:image/png;base64,${image.b64_json}` : image.url
+  if (!output) return err(res, 502, 'NoImage', 'The image service returned nothing usable.')
+
+  // Same envelope the polling client already understands, minus the polling.
+  send(res, 200, JSON.stringify({ id: 'sync', status: 'completed', output: [output] }))
+}
+
 export const handler = async (req, res) => {
   const { pathname } = new URL(req.url, 'http://localhost')
 
@@ -83,7 +139,9 @@ export const handler = async (req, res) => {
   }
 
   // Lets the UI say "no key" without guessing from an upstream error.
-  if (pathname === '/api/_key') return send(res, 200, JSON.stringify({ ok: Boolean(KEY) }))
+  if (pathname === '/api/_key') {
+    return send(res, 200, JSON.stringify({ ok: Boolean(KEY), provider: PROVIDER }))
+  }
 
   // Only /run spends credits, so that is the one worth throttling — and it is
   // checked before anything else that could reach the network.
@@ -98,7 +156,13 @@ export const handler = async (req, res) => {
   }
 
   if (!KEY) {
-    return err(res, 503, 'NoApiKey', 'Add FASHN_API_KEY to .env and restart the server.')
+    return err(res, 503, 'NoApiKey', 'Add OPENAI_API_KEY (or FASHN_API_KEY) to .env and restart the server.')
+  }
+
+  if (PROVIDER === 'openai') {
+    if (pathname === '/api/run') return openaiRun(req, res)
+    // Synchronous provider: nothing to poll, and no credit balance to report.
+    return err(res, 404, 'Unsupported', `${pathname} is not available on this provider.`)
   }
 
   // Generic passthrough: /api/run -> /v1/run, /api/status/:id -> /v1/status/:id.
@@ -126,6 +190,7 @@ if (import.meta.filename === process.argv[1]) {
     `Dizrupt Try-On on http://localhost:${PORT}` +
       `\n  rate limit: ${RATE_LIMIT} generations / ${RATE_WINDOW / 60_000} min per IP` +
       `\n  access: ${PASSWORD ? 'password required' : 'open — set ACCESS_PASSWORD before deploying'}` +
-      (KEY ? '' : '\n  ! FASHN_API_KEY is not set — copy .env.example to .env and add your key.'),
+      `\n  provider: ${PROVIDER}${PROVIDER === 'openai' ? ` (${OPENAI_MODEL})` : ''}` +
+      (KEY ? '' : '\n  ! No API key set — copy .env.example to .env and add one.'),
   )
 }

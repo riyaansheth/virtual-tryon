@@ -9,6 +9,11 @@ const OPENAI_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
 const OPENAI_QUALITY = process.env.OPENAI_IMAGE_QUALITY || 'high'
 // Portrait, because a try-on is always a standing person. Edges must be /16.
 const OPENAI_SIZE = process.env.OPENAI_IMAGE_SIZE || '1024x1536'
+// tryon-v1.6 is the accurate default at 1 credit; tryon-max trades credits for
+// resolution up to 4k. Quality mode costs no extra credits, only seconds.
+const FASHN_MODEL = process.env.FASHN_MODEL || 'tryon-v1.6'
+const FASHN_MODE = process.env.FASHN_MODE || 'quality'
+const FASHN_RESOLUTION = process.env.FASHN_RESOLUTION || '2k'
 // An OpenAI key wins when both are present, so switching back is one line in .env.
 const PROVIDER = OPENAI_KEY ? 'openai' : 'fashn'
 const KEY = OPENAI_KEY || FASHN_KEY
@@ -99,12 +104,48 @@ const toBlob = async (src) => {
   return r.blob()
 }
 
-const openaiRun = async (req, res) => {
-  const { inputs = {} } = JSON.parse(await readBody(req))
-  if (!inputs.model_image || !inputs.garment_image) {
-    return err(res, 400, 'MissingImage', 'Both photos are required.')
+/* ---------- FASHN provider ---------- */
+// Purpose-built try-on: it composites the garment rather than redrawing the
+// person, so identity and print detail survive. The two models take different
+// field names for the same two images.
+const fashnRun = async (inputs, res) => {
+  const isMax = FASHN_MODEL === 'tryon-max'
+  const seed = Math.floor(Math.random() * 4294967295)
+  const body = {
+    model_name: FASHN_MODEL,
+    inputs: isMax
+      ? {
+          model_image: inputs.model_image,
+          product_image: inputs.garment_image,
+          resolution: FASHN_RESOLUTION,
+          generation_mode: FASHN_MODE,
+          num_images: 1,
+          output_format: 'png',
+          seed,
+        }
+      : {
+          model_image: inputs.model_image,
+          garment_image: inputs.garment_image,
+          category: 'auto',
+          mode: FASHN_MODE,
+          garment_photo_type: 'auto',
+          segmentation_free: true,
+          moderation_level: 'permissive',
+          num_samples: 1,
+          output_format: 'png',
+          seed,
+        },
   }
 
+  const upstream = await fetch(`${UPSTREAM}/run`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${KEY}`, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  send(res, upstream.status, await upstream.text())
+}
+
+const openaiRun = async (inputs, res) => {
   const form = new FormData()
   form.append('model', OPENAI_MODEL)
   form.append('prompt', TRY_ON_PROMPT)
@@ -167,8 +208,16 @@ export const handler = async (req, res) => {
     return err(res, 503, 'NoApiKey', 'Add OPENAI_API_KEY (or FASHN_API_KEY) to .env and restart the server.')
   }
 
+  // The client sends only the two images; provider-specific payloads are built here.
+  if (pathname === '/api/run') {
+    const { inputs = {} } = JSON.parse(await readBody(req))
+    if (!inputs.model_image || !inputs.garment_image) {
+      return err(res, 400, 'MissingImage', 'Both photos are required.')
+    }
+    return PROVIDER === 'openai' ? openaiRun(inputs, res) : fashnRun(inputs, res)
+  }
+
   if (PROVIDER === 'openai') {
-    if (pathname === '/api/run') return openaiRun(req, res)
     // Synchronous provider: nothing to poll, and no credit balance to report.
     return err(res, 404, 'Unsupported', `${pathname} is not available on this provider.`)
   }

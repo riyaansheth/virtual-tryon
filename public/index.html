@@ -475,22 +475,9 @@ $('run').addEventListener('click', async () => {
   }, 200)
 
   try {
-    // Tuned defaults, deliberately not exposed: auto category, balanced mode,
-    // one image. A fresh seed each run so "generate again" actually differs.
+    // Just the two photos — the server picks the provider and its settings.
     const started_ = await call('/api/run', {
-      model_name: 'tryon-v1.6',
-      inputs: {
-        model_image: state.model,
-        garment_image: state.garment,
-        category: 'auto',
-        mode: 'balanced',
-        garment_photo_type: 'auto',
-        segmentation_free: true,
-        moderation_level: 'permissive',
-        num_samples: 1,
-        output_format: 'png',
-        seed: Math.floor(Math.random() * 4294967295),
-      },
+      inputs: { model_image: state.model, garment_image: state.garment },
     })
 
     // Some providers answer straight away; others hand back an id to poll.

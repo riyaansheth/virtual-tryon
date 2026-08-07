@@ -61,10 +61,11 @@ Two steps: add the garment, add your photo, press **Generate**. The result lands
 in the mirror — drag the seam to wipe between the original photo and the try-on.
 Pressing Generate again re-runs with a fresh seed for a different attempt.
 
-No settings are exposed. On FASHN every run uses `tryon-v1.6` with auto
-category, auto garment-shot detection, balanced mode, one PNG out; on OpenAI it
-is a single fixed prompt. If you ever need the knobs back, they are a few lines
-in `public/index.html` (the `inputs` object) and `server.mjs` (`TRY_ON_PROMPT`).
+No settings are exposed in the UI. The browser sends only the two photos; the
+server picks the provider and its settings. Tune them with the environment
+variables above — `FASHN_MODE=quality` and `OPENAI_IMAGE_QUALITY=high` are the
+accuracy dials, `FASHN_MODEL=tryon-max` and `OPENAI_IMAGE_SIZE` the resolution
+ones. The OpenAI prompt lives in `server.mjs` as `TRY_ON_PROMPT`.
 
 Inputs larger than 1536px are downscaled in the browser before upload. Small PNGs
 pass through untouched so transparent flat-lays keep their alpha.

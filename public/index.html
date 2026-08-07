@@ -269,10 +269,19 @@ button, input { font: inherit; color: inherit; }
 .tag.l { left: 10px; }
 .tag.r { right: 10px; color: var(--violet-lit); }
 
-.working { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(6, 5, 10, .7); }
-.working .bar { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--violet-lit); box-shadow: 0 0 24px 2px rgba(192, 132, 252, .6); animation: sweep 2.4s ease-in-out infinite; }
-.working .label { font: 500 11px/1 var(--mono); letter-spacing: .2em; text-transform: uppercase; color: var(--violet-lit); }
-@keyframes sweep { 0%, 100% { left: 8%; } 50% { left: 92%; } }
+.working { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(6, 5, 10, .72); }
+.prog { width: min(320px, 64%); display: grid; gap: 11px; }
+.track { height: 3px; border-radius: 2px; background: rgba(168, 132, 255, .18); overflow: hidden; }
+.fill {
+  height: 100%;
+  width: 0;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--violet), var(--violet-lit));
+  box-shadow: 0 0 12px rgba(192, 132, 252, .6);
+  transition: width .3s linear;
+}
+.meta { display: flex; justify-content: space-between; font: 500 10px/1 var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+.meta .time { color: var(--violet-lit); }
 
 .alert {
   padding: 12px 14px;
@@ -468,10 +477,13 @@ $('run').addEventListener('click', async () => {
   btn.disabled = true
   btn.textContent = 'Working…'
   $('open').hidden = true
-  showWorking('starting')
   const started = Date.now()
+  let phase = 'generating'
+  paintWorking(phase, 0)
   const tick = setInterval(() => {
-    $('status').innerHTML = `<b>${$('status').dataset.phase || 'working'}</b> · ${((Date.now() - started) / 1000).toFixed(0)}s`
+    const elapsed = Date.now() - started
+    $('status').innerHTML = `<b>${phase}</b> · ${(elapsed / 1000).toFixed(0)}s`
+    paintWorking(phase, elapsed)
   }, 200)
 
   try {
@@ -485,8 +497,7 @@ $('run').addEventListener('click', async () => {
     while (!output) {
       await sleep(1500)
       const res = await call(`/api/status/${started_.id}`)
-      $('status').dataset.phase = res.status
-      showWorking(res.status)
+      phase = res.status
       if (res.status === 'completed') { output = (res.output || [])[0]; break }
       if (res.status === 'failed') throw new Error(res.error?.message || 'The try-on failed')
     }
@@ -503,7 +514,6 @@ $('run').addEventListener('click', async () => {
   } finally {
     clearInterval(tick)
     delete btn.dataset.busy
-    delete $('status').dataset.phase
     syncRun()
   }
 })
@@ -518,15 +528,23 @@ function emptyState() {
   return el
 }
 
-function showWorking(phase) {
-  const label = phase.replace('_', ' ')
-  const existing = $('canvas').querySelector('.working')
-  if (existing) return void (existing.querySelector('.label').textContent = label)
-  const el = document.createElement('div')
-  el.className = 'working'
-  el.innerHTML = `<div class="bar"></div><div class="label"></div>`
-  el.querySelector('.label').textContent = label
-  $('canvas').replaceChildren(el)
+// Neither provider reports real progress — OpenAI is one blocking call, FASHN
+// gives phases but no percentage. So this is an elapsed-time curve that eases
+// toward 100% and never claims to be finished. ~63% at 45s, ~95% at 135s.
+function paintWorking(phase, elapsed) {
+  let box = $('canvas').querySelector('.working')
+  if (!box) {
+    box = document.createElement('div')
+    box.className = 'working'
+    box.innerHTML = `<div class="prog">
+      <div class="track"><div class="fill"></div></div>
+      <div class="meta"><span class="phase"></span><span class="time"></span></div>
+    </div>`
+    $('canvas').replaceChildren(box)
+  }
+  box.querySelector('.fill').style.width = `${(100 * (1 - Math.exp(-elapsed / 45000))).toFixed(1)}%`
+  box.querySelector('.phase').textContent = phase.replace('_', ' ')
+  box.querySelector('.time').textContent = `${Math.round(elapsed / 1000)}s`
 }
 
 function show(url) {

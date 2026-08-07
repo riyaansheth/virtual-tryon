@@ -5,6 +5,10 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 const FASHN_KEY = process.env.FASHN_API_KEY
 const OPENAI_KEY = process.env.OPENAI_API_KEY
 const OPENAI_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
+// The cost/quality dial. 'low' is a few cents; 'high' is several times that.
+const OPENAI_QUALITY = process.env.OPENAI_IMAGE_QUALITY || 'high'
+// Portrait, because a try-on is always a standing person. Edges must be /16.
+const OPENAI_SIZE = process.env.OPENAI_IMAGE_SIZE || '1024x1536'
 // An OpenAI key wins when both are present, so switching back is one line in .env.
 const PROVIDER = OPENAI_KEY ? 'openai' : 'fashn'
 const KEY = OPENAI_KEY || FASHN_KEY
@@ -104,6 +108,8 @@ const openaiRun = async (req, res) => {
   const form = new FormData()
   form.append('model', OPENAI_MODEL)
   form.append('prompt', TRY_ON_PROMPT)
+  form.append('quality', OPENAI_QUALITY)
+  form.append('size', OPENAI_SIZE)
   form.append('image[]', await toBlob(inputs.model_image), 'person.png')
   form.append('image[]', await toBlob(inputs.garment_image), 'garment.png')
 

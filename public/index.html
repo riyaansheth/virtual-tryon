@@ -348,7 +348,9 @@ button, input { font: inherit; color: inherit; }
 
 <script type="module">
 const $ = (id) => document.getElementById(id)
-const MAX_EDGE = 1536
+// The model reads reference images at full fidelity, so downscaling here throws
+// away exactly the fabric texture and print detail the try-on needs.
+const MAX_EDGE = 2560
 
 const state = { model: null, garment: null, result: null }
 
@@ -362,7 +364,7 @@ const readAsDataURL = (file) => new Promise((resolve, reject) => {
 
 const shrink = (file) => new Promise((resolve, reject) => {
   // Small PNGs go through untouched so transparent flat-lays keep their alpha.
-  if (file.type === 'image/png' && file.size < 4e6) return resolve(readAsDataURL(file))
+  if (file.type === 'image/png' && file.size < 8e6) return resolve(readAsDataURL(file))
   const img = new Image()
   img.onload = () => {
     const scale = Math.min(1, MAX_EDGE / Math.max(img.width, img.height))
@@ -372,7 +374,7 @@ const shrink = (file) => new Promise((resolve, reject) => {
     })
     c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
     URL.revokeObjectURL(img.src)
-    resolve(c.toDataURL('image/jpeg', 0.92))
+    resolve(c.toDataURL('image/jpeg', 0.95))
   }
   img.onerror = () => reject(new Error(`${file.name || 'That file'} is not a readable image`))
   img.src = URL.createObjectURL(file)

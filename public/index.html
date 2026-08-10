@@ -233,7 +233,10 @@ button, input { font: inherit; color: inherit; }
   --x: 50%;
 }
 .compare img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
-.compare .before { clip-path: inset(0 calc(100% - var(--x)) 0 0); }
+/* The box is sized to the result, so the original almost never matches its
+   aspect. Contain would letterbox it and let the result show through above and
+   below; cover crops it to the same frame so the wipe stays aligned. */
+.compare .before { object-fit: cover; clip-path: inset(0 calc(100% - var(--x)) 0 0); }
 .seam {
   position: absolute;
   top: 0;

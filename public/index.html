@@ -247,6 +247,42 @@ button, input { font: inherit; color: inherit; }
 .empty h2 { font: 300 30px/1.15 var(--display); letter-spacing: -.02em; margin: 0; max-width: 16ch; }
 .empty p { margin: 0; color: var(--muted); font-size: 13px; max-width: 34ch; }
 
+/* region picker */
+.select {
+  position: relative;
+  width: min(100%, 620px);
+  max-height: 100%;
+  overflow: hidden;
+  user-select: none;
+  touch-action: none;
+  cursor: crosshair;
+  border-radius: 4px;
+}
+.select img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+.sel-box {
+  position: absolute;
+  border: 1px solid var(--violet-lit);
+  border-radius: 2px;
+  box-shadow: 0 0 0 9999px rgba(6, 5, 10, .58), 0 0 14px rgba(192, 132, 252, .45);
+  pointer-events: none;
+}
+.sel-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(6, 5, 10, .82);
+  border: 1px solid var(--line);
+  font: 500 10px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* the mirror */
 .compare {
   position: relative;
@@ -372,13 +408,14 @@ button, input { font: inherit; color: inherit; }
     </ol>
 
     <button class="run" id="run" disabled>Generate</button>
-    <p class="note">Takes about half a minute.</p>
+    <p class="note">A tighter box is faster and sharper.</p>
   </aside>
 
   <section class="stage">
     <div class="stage-bar">
       <span class="status" id="status">Ready</span>
       <div class="stage-actions">
+        <button class="ghost" id="rearea" hidden>Change area</button>
         <a class="ghost" id="open" hidden target="_blank" rel="noopener">Open image ↗</a>
       </div>
     </div>
@@ -398,18 +435,23 @@ const MAX_EDGE = 2560
 // server's 25MB body limit with room to spare.
 const MAX_UPLOAD = 8e6
 
-const state = { model: null, garment: null, result: null, mode: 'clothing' }
+const state = { model: null, garment: null, result: null, mode: 'clothing', box: null, editing: false }
 
 const COPY = {
   clothing: {
     label: 'Add the garment',
     cue: 'Drop, click or paste a photo of the clothing',
     head: 'Put the garment on the person.',
+    hint: 'Drag a box over the clothing',
+    // Torso-ish: keeps the face and most of the background out of the model's reach.
+    box: { x: 0.12, y: 0.18, w: 0.76, h: 0.72 },
   },
   jewellery: {
     label: 'Add the jewellery',
     cue: 'Drop, click or paste a photo of the piece',
     head: 'Put the jewellery on the person.',
+    hint: 'Drag a box over where the piece goes',
+    box: { x: 0.24, y: 0.12, w: 0.52, h: 0.44 },
   },
 }
 
@@ -448,6 +490,57 @@ const shrink = (file) => new Promise((resolve, reject) => {
   img.src = URL.createObjectURL(file)
 })
 
+/* ---------- crop out, paste back ---------- */
+// The model repaints whatever it is shown, so it is only shown the region that
+// should change. Everything outside the box stays as the original pixels.
+const loadImage = (src) => new Promise((resolve, reject) => {
+  const img = new Image()
+  img.onload = () => resolve(img)
+  img.onerror = () => reject(new Error('Could not read that image'))
+  img.src = src
+})
+
+const cropToBox = async (src, box) => {
+  const img = await loadImage(src)
+  const sw = Math.max(32, Math.round(box.w * img.naturalWidth))
+  const sh = Math.max(32, Math.round(box.h * img.naturalHeight))
+  const c = Object.assign(document.createElement('canvas'), { width: sw, height: sh })
+  c.getContext('2d').drawImage(
+    img,
+    Math.round(box.x * img.naturalWidth), Math.round(box.y * img.naturalHeight), sw, sh,
+    0, 0, sw, sh,
+  )
+  return c.toDataURL('image/jpeg', 0.95)
+}
+
+const pasteBack = async (originalSrc, patchSrc, box) => {
+  const [base, patch] = await Promise.all([loadImage(originalSrc), loadImage(patchSrc)])
+  const W = base.naturalWidth
+  const H = base.naturalHeight
+  const out = Object.assign(document.createElement('canvas'), { width: W, height: H })
+  const ctx = out.getContext('2d')
+  ctx.drawImage(base, 0, 0)
+
+  const dx = Math.round(box.x * W)
+  const dy = Math.round(box.y * H)
+  const dw = Math.round(box.w * W)
+  const dh = Math.round(box.h * H)
+
+  // Soften the join: a blurred solid rect used as an alpha mask feathers all
+  // four edges at once, so the patch does not read as a pasted rectangle.
+  const feather = Math.max(2, Math.round(Math.min(dw, dh) * 0.06))
+  const tmp = Object.assign(document.createElement('canvas'), { width: dw, height: dh })
+  const t = tmp.getContext('2d')
+  t.drawImage(patch, 0, 0, dw, dh)
+  t.globalCompositeOperation = 'destination-in'
+  t.filter = `blur(${feather}px)`
+  t.fillStyle = '#fff'
+  t.fillRect(feather, feather, dw - 2 * feather, dh - 2 * feather)
+
+  ctx.drawImage(tmp, dx, dy)
+  return out.toDataURL('image/png')
+}
+
 function setSlot(which, value) {
   state[which] = value
   const drop = $(which === 'model' ? 'dropModel' : 'dropGarment')
@@ -455,7 +548,14 @@ function setSlot(which, value) {
   thumb.src = value || ''
   drop.classList.toggle('filled', Boolean(value))
   $(which === 'model' ? 'stepModel' : 'stepGarment').classList.toggle('done', Boolean(value))
+  // A new photo invalidates whatever region was picked on the old one.
+  if (which === 'model') {
+    state.box = value ? { ...COPY[state.mode].box } : null
+    state.result = null
+    state.editing = false
+  }
   syncRun()
+  renderStage()
 }
 
 async function takeFile(which, file) {
@@ -495,8 +595,9 @@ document.querySelectorAll('[data-mode]').forEach((btn) =>
     $('itemLabel').textContent = copy.label
     $('itemCue').textContent = copy.cue
     $('dropGarment').setAttribute('aria-label', copy.label)
-    // Only redraw the stage if it is not showing a result the user still wants.
-    if (!state.result) $('canvas').replaceChildren(emptyState())
+    // A necklace and a dress want very different regions, so reset the box.
+    if (state.model) state.box = { ...copy.box }
+    renderStage()
   }))
 
 // Paste an image, or an image URL, into whichever step is still empty.
@@ -559,10 +660,11 @@ $('run').addEventListener('click', async () => {
   }, 200)
 
   try {
-    // Just the two photos and the mode — the server owns the prompt and settings.
+    // Send only the selected region, so the face and background are never at risk.
+    const region = await cropToBox(state.model, state.box)
     const started_ = await call('/api/run', {
       mode: state.mode,
-      inputs: { model_image: state.model, garment_image: state.garment },
+      inputs: { model_image: region, garment_image: state.garment },
     })
 
     // Some providers answer straight away; others hand back an id to poll.
@@ -576,14 +678,15 @@ $('run').addEventListener('click', async () => {
     }
     if (!output) throw new Error('Finished without an image — try a different photo')
 
-    state.result = output
-    show(output)
+    state.result = await pasteBack(state.model, output, state.box)
+    state.editing = false
+    show(state.result)
     $('status').innerHTML = `<b>done</b> · ${((Date.now() - started) / 1000).toFixed(1)}s`
     loadCredits()
   } catch (e) {
     showAlert('That did not work', e.message)
     $('status').textContent = 'Ready'
-    $('canvas').replaceChildren(emptyState())
+    renderStage()
   } finally {
     clearInterval(tick)
     delete btn.dataset.busy
@@ -592,6 +695,66 @@ $('run').addEventListener('click', async () => {
 })
 
 /* ---------- stage ---------- */
+/* ---------- what the stage shows ---------- */
+function renderStage() {
+  if (state.result && !state.editing) return show(state.result)
+  if (state.model) return showSelector()
+  $('canvas').replaceChildren(emptyState())
+  $('rearea').hidden = true
+  $('open').hidden = true
+}
+
+function showSelector() {
+  const wrap = document.createElement('div')
+  wrap.className = 'select'
+  wrap.innerHTML = `<img alt="Your photo"><div class="sel-box"></div><div class="sel-hint"></div>`
+  const img = wrap.querySelector('img')
+  const rect = wrap.querySelector('.sel-box')
+  wrap.querySelector('.sel-hint').textContent = COPY[state.mode].hint
+  img.onload = () => { wrap.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}` }
+  img.src = state.model
+
+  const paint = () => {
+    const b = state.box
+    rect.style.left = `${b.x * 100}%`
+    rect.style.top = `${b.y * 100}%`
+    rect.style.width = `${b.w * 100}%`
+    rect.style.height = `${b.h * 100}%`
+  }
+  paint()
+
+  let start = null
+  const at = (e) => {
+    const r = wrap.getBoundingClientRect()
+    return {
+      x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)),
+      y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)),
+    }
+  }
+  wrap.addEventListener('pointerdown', (e) => { wrap.setPointerCapture(e.pointerId); start = at(e) })
+  wrap.addEventListener('pointermove', (e) => {
+    if (!start) return
+    const p = at(e)
+    state.box = {
+      x: Math.min(start.x, p.x), y: Math.min(start.y, p.y),
+      w: Math.abs(p.x - start.x), h: Math.abs(p.y - start.y),
+    }
+    paint()
+  })
+  wrap.addEventListener('pointerup', () => {
+    start = null
+    // A stray click would otherwise leave a zero-size region.
+    if (state.box.w < 0.05 || state.box.h < 0.05) {
+      state.box = { ...COPY[state.mode].box }
+      paint()
+    }
+  })
+
+  $('canvas').replaceChildren(wrap)
+  $('rearea').hidden = true
+  $('open').hidden = !state.result
+}
+
 function emptyState() {
   const el = document.createElement('div')
   el.className = 'empty'
@@ -639,9 +802,17 @@ function show(url) {
   box.addEventListener('pointermove', (e) => { if (box.hasPointerCapture(e.pointerId)) at(e.clientX) })
 
   $('canvas').replaceChildren(box)
+  $('rearea').hidden = false
   $('open').hidden = false
-  $('open').href = url
+  // Chrome blocks top-level navigation to data: URLs, and every result is one
+  // now, so hand the link a blob instead.
+  fetch(url).then((r) => r.blob()).then((blob) => {
+    if (openUrl) URL.revokeObjectURL(openUrl)
+    openUrl = URL.createObjectURL(blob)
+    $('open').href = openUrl
+  })
 }
+let openUrl = null
 
 /* ---------- key + credits ---------- */
 const findNumber = (v) => {
@@ -665,7 +836,9 @@ async function loadCredits() {
   if (n !== null) $('creditsVal').textContent = n.toLocaleString()
 }
 
-$('canvas').replaceChildren(emptyState())
+$('rearea').addEventListener('click', () => { state.editing = true; renderStage() })
+
+renderStage()
 loadCredits()
 syncRun()
 </script>

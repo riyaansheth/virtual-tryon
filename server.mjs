@@ -86,13 +86,27 @@ const readBody = (req) =>
 /* ---------- OpenAI provider ---------- */
 // gpt-image-* has no try-on mode; it re-renders the photo from a prompt, so the
 // wording below leans hard on preserving everything except the clothing.
-const TRY_ON_PROMPT = [
-  'Dress the person in the first image in the garment shown in the second image.',
-  "Keep the person's face, hair, body shape, pose, skin tone and the background exactly as they are.",
-  'Replace only the clothing item that the garment corresponds to.',
-  "Reproduce the garment's colour, pattern, print, texture, neckline and cut faithfully.",
-  'Photorealistic result, with lighting and shadows consistent with the original photo.',
-].join(' ')
+const PROMPTS = {
+  clothing: [
+    'Dress the person in the first image in the garment shown in the second image.',
+    "Keep the person's face, hair, body shape, pose, skin tone and the background exactly as they are.",
+    'Replace only the clothing item that the garment corresponds to.',
+    "Reproduce the garment's colour, pattern, print, texture, neckline and cut faithfully.",
+    'Photorealistic result, with lighting and shadows consistent with the original photo.',
+  ].join(' '),
+  // Jewellery is added, not swapped, and the usual failure is scale — models
+  // render a necklace the size of a dinner plate unless told otherwise.
+  jewellery: [
+    'Add the jewellery shown in the second image onto the person in the first image.',
+    "Keep the person's face, hair, skin tone, pose, clothing and the background exactly as they are.",
+    'Add only the jewellery, worn where that kind of piece is naturally worn:',
+    'necklaces and pendants at the collarbone, earrings on the earlobes, rings on fingers,',
+    'bracelets and watches on the wrist, bangles on the forearm.',
+    'Keep it at realistic scale relative to the body — jewellery is small.',
+    "Reproduce the piece's metal colour, gemstones, shape and detailing faithfully.",
+    'Photorealistic, with metal reflections and shadows consistent with the original lighting.',
+  ].join(' '),
+}
 
 const toBlob = async (src) => {
   if (src.startsWith('data:')) {
@@ -108,7 +122,11 @@ const toBlob = async (src) => {
 // Purpose-built try-on: it composites the garment rather than redrawing the
 // person, so identity and print detail survive. The two models take different
 // field names for the same two images.
-const fashnRun = async (inputs, res) => {
+const fashnRun = async (inputs, mode, res) => {
+  if (mode === 'jewellery') {
+    return err(res, 400, 'UnsupportedMode',
+      'FASHN\'s try-on model only handles garments. Jewellery mode needs the OpenAI provider.')
+  }
   const isMax = FASHN_MODEL === 'tryon-max'
   const seed = Math.floor(Math.random() * 4294967295)
   const body = {
@@ -145,10 +163,10 @@ const fashnRun = async (inputs, res) => {
   send(res, upstream.status, await upstream.text())
 }
 
-const openaiRun = async (inputs, res) => {
+const openaiRun = async (inputs, mode, res) => {
   const form = new FormData()
   form.append('model', OPENAI_MODEL)
-  form.append('prompt', TRY_ON_PROMPT)
+  form.append('prompt', PROMPTS[mode] || PROMPTS.clothing)
   form.append('quality', OPENAI_QUALITY)
   form.append('size', OPENAI_SIZE)
   form.append('image[]', await toBlob(inputs.model_image), 'person.png')
@@ -210,11 +228,11 @@ export const handler = async (req, res) => {
 
   // The client sends only the two images; provider-specific payloads are built here.
   if (pathname === '/api/run') {
-    const { inputs = {} } = JSON.parse(await readBody(req))
+    const { inputs = {}, mode = 'clothing' } = JSON.parse(await readBody(req))
     if (!inputs.model_image || !inputs.garment_image) {
       return err(res, 400, 'MissingImage', 'Both photos are required.')
     }
-    return PROVIDER === 'openai' ? openaiRun(inputs, res) : fashnRun(inputs, res)
+    return PROVIDER === 'openai' ? openaiRun(inputs, mode, res) : fashnRun(inputs, mode, res)
   }
 
   if (PROVIDER === 'openai') {

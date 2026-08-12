@@ -106,6 +106,32 @@ button, input { font: inherit; color: inherit; }
   overflow-y: auto;
 }
 
+/* ---------- mode toggle ---------- */
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--panel);
+}
+.modes button {
+  padding: 9px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: 500 12px/1 var(--body);
+  cursor: pointer;
+  transition: background .18s, color .18s;
+}
+.modes button:hover { color: var(--white); }
+.modes button[aria-pressed="true"] {
+  background: linear-gradient(160deg, var(--violet), var(--violet-deep));
+  color: var(--white);
+}
+
 /* ---------- the two steps ---------- */
 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
 .step { display: flex; flex-direction: column; gap: 9px; position: relative; }
@@ -321,12 +347,17 @@ button, input { font: inherit; color: inherit; }
 
 <main class="work">
   <aside class="rail">
+    <div class="modes" role="group" aria-label="What are you trying on">
+      <button type="button" data-mode="clothing" aria-pressed="true">Clothing</button>
+      <button type="button" data-mode="jewellery" aria-pressed="false">Jewellery</button>
+    </div>
+
     <ol class="steps">
       <li class="step" id="stepGarment">
-        <div class="step-head"><span class="step-n">1</span><span class="step-label">Add the garment</span></div>
+        <div class="step-head"><span class="step-n">1</span><span class="step-label" id="itemLabel">Add the garment</span></div>
         <div class="drop" id="dropGarment" tabindex="0" role="button" aria-label="Add the garment image">
           <img class="thumb" id="thumbGarment" alt="">
-          <span class="cue">Drop, click or paste a photo of the clothing</span>
+          <span class="cue" id="itemCue">Drop, click or paste a photo of the clothing</span>
         </div>
         <button class="clear" data-clear="garment" aria-label="Remove the garment image">✕</button>
       </li>
@@ -364,7 +395,20 @@ const $ = (id) => document.getElementById(id)
 // away exactly the fabric texture and print detail the try-on needs.
 const MAX_EDGE = 2560
 
-const state = { model: null, garment: null, result: null }
+const state = { model: null, garment: null, result: null, mode: 'clothing' }
+
+const COPY = {
+  clothing: {
+    label: 'Add the garment',
+    cue: 'Drop, click or paste a photo of the clothing',
+    head: 'Put the garment on the person.',
+  },
+  jewellery: {
+    label: 'Add the jewellery',
+    cue: 'Drop, click or paste a photo of the piece',
+    head: 'Put the jewellery on the person.',
+  },
+}
 
 /* ---------- image intake ---------- */
 const readAsDataURL = (file) => new Promise((resolve, reject) => {
@@ -430,6 +474,19 @@ for (const [which, dropId] of [['garment', 'dropGarment'], ['model', 'dropModel'
 document.querySelectorAll('[data-clear]').forEach((btn) =>
   btn.addEventListener('click', () => setSlot(btn.dataset.clear, null)))
 
+/* ---------- clothing / jewellery ---------- */
+document.querySelectorAll('[data-mode]').forEach((btn) =>
+  btn.addEventListener('click', () => {
+    state.mode = btn.dataset.mode
+    document.querySelectorAll('[data-mode]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)))
+    const copy = COPY[state.mode]
+    $('itemLabel').textContent = copy.label
+    $('itemCue').textContent = copy.cue
+    $('dropGarment').setAttribute('aria-label', copy.label)
+    // Only redraw the stage if it is not showing a result the user still wants.
+    if (!state.result) $('canvas').replaceChildren(emptyState())
+  }))
+
 // Paste an image, or an image URL, into whichever step is still empty.
 window.addEventListener('paste', (e) => {
   const which = state.garment ? (state.model ? null : 'model') : 'garment'
@@ -490,8 +547,9 @@ $('run').addEventListener('click', async () => {
   }, 200)
 
   try {
-    // Just the two photos — the server picks the provider and its settings.
+    // Just the two photos and the mode — the server owns the prompt and settings.
     const started_ = await call('/api/run', {
+      mode: state.mode,
       inputs: { model_image: state.model, garment_image: state.garment },
     })
 
@@ -525,9 +583,9 @@ $('run').addEventListener('click', async () => {
 function emptyState() {
   const el = document.createElement('div')
   el.className = 'empty'
-  el.innerHTML = `<div class="empty-seam"></div>
-    <h2>Put the garment on the person.</h2>
+  el.innerHTML = `<div class="empty-seam"></div><h2></h2>
     <p>Add the two photos, then press Generate.</p>`
+  el.querySelector('h2').textContent = COPY[state.mode].head
   return el
 }
 

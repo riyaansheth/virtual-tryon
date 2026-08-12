@@ -27,8 +27,10 @@ const RATE_WINDOW = (Number(process.env.RATE_WINDOW_MIN) || 10) * 60_000
 const UPSTREAM = 'https://api.fashn.ai/v1'
 const MAX_BODY = 25 * 1024 * 1024 // two ~1.5k-px data URIs fit well under this
 
-const send = (res, code, body, headers = {}) =>
+const send = (res, code, body, headers = {}) => {
+  if (res.headersSent) return // an earlier guard already answered
   res.writeHead(code, { 'content-type': 'application/json', ...headers }).end(body)
+}
 
 const err = (res, code, error, message, headers) =>
   send(res, code, JSON.stringify({ error, message }), headers)
@@ -66,15 +68,19 @@ const withinLimit = (ip) => {
   return true
 }
 
-const readBody = (req) =>
+const readBody = (req, res) =>
   new Promise((resolve, reject) => {
     let size = 0
     const chunks = []
     req.on('data', (c) => {
       size += c.length
       if (size > MAX_BODY) {
+        // Answer before hanging up. Destroying the socket first leaves the
+        // browser with a bare network error ("Failed to fetch") and no clue why.
+        err(res, 413, 'PayloadTooLarge',
+          `Those images are too big. Keep the pair under ${Math.floor(MAX_BODY / 1024 / 1024)}MB.`)
+        res.once('finish', () => req.destroy())
         reject(new Error('Payload too large'))
-        req.destroy()
         return
       }
       chunks.push(c)
@@ -228,7 +234,7 @@ export const handler = async (req, res) => {
 
   // The client sends only the two images; provider-specific payloads are built here.
   if (pathname === '/api/run') {
-    const { inputs = {}, mode = 'clothing' } = JSON.parse(await readBody(req))
+    const { inputs = {}, mode = 'clothing' } = JSON.parse(await readBody(req, res))
     if (!inputs.model_image || !inputs.garment_image) {
       return err(res, 400, 'MissingImage', 'Both photos are required.')
     }
@@ -246,7 +252,7 @@ export const handler = async (req, res) => {
     const upstream = await fetch(UPSTREAM + pathname.slice(4), {
       method: req.method,
       headers: { authorization: `Bearer ${KEY}`, 'content-type': 'application/json' },
-      body: req.method === 'POST' ? await readBody(req) : undefined,
+      body: req.method === 'POST' ? await readBody(req, res) : undefined,
     })
     send(res, upstream.status, await upstream.text())
   } catch (e) {

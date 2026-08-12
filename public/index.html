@@ -394,6 +394,9 @@ const $ = (id) => document.getElementById(id)
 // The model reads reference images at full fidelity, so downscaling here throws
 // away exactly the fabric texture and print detail the try-on needs.
 const MAX_EDGE = 2560
+// Per image, as base64 characters. Two of these plus JSON stay inside the
+// server's 25MB body limit with room to spare.
+const MAX_UPLOAD = 8e6
 
 const state = { model: null, garment: null, result: null, mode: 'clothing' }
 
@@ -420,17 +423,26 @@ const readAsDataURL = (file) => new Promise((resolve, reject) => {
 
 const shrink = (file) => new Promise((resolve, reject) => {
   // Small PNGs go through untouched so transparent flat-lays keep their alpha.
-  if (file.type === 'image/png' && file.size < 8e6) return resolve(readAsDataURL(file))
+  // The threshold is deliberately low: base64 inflates by a third, and two big
+  // PNGs together used to blow past the server's body limit.
+  if (file.type === 'image/png' && file.size < 2e6) return resolve(readAsDataURL(file))
   const img = new Image()
   img.onload = () => {
-    const scale = Math.min(1, MAX_EDGE / Math.max(img.width, img.height))
-    const c = Object.assign(document.createElement('canvas'), {
-      width: Math.round(img.width * scale),
-      height: Math.round(img.height * scale),
-    })
-    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+    // Step down until the encoded string fits the budget, so a 48-megapixel
+    // phone photo can never produce an unsendable payload.
+    let best
+    for (const [edge, quality] of [[MAX_EDGE, 0.95], [2048, 0.9], [1536, 0.85]]) {
+      const scale = Math.min(1, edge / Math.max(img.width, img.height))
+      const c = Object.assign(document.createElement('canvas'), {
+        width: Math.round(img.width * scale),
+        height: Math.round(img.height * scale),
+      })
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height)
+      best = c.toDataURL('image/jpeg', quality)
+      if (best.length <= MAX_UPLOAD) break
+    }
     URL.revokeObjectURL(img.src)
-    resolve(c.toDataURL('image/jpeg', 0.95))
+    resolve(best)
   }
   img.onerror = () => reject(new Error(`${file.name || 'That file'} is not a readable image`))
   img.src = URL.createObjectURL(file)

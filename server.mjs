@@ -26,6 +26,7 @@ const RATE_LIMIT = Number(process.env.RATE_LIMIT) || 20
 const RATE_WINDOW = (Number(process.env.RATE_WINDOW_MIN) || 10) * 60_000
 const UPSTREAM = 'https://api.fashn.ai/v1'
 const MAX_BODY = 25 * 1024 * 1024 // two ~1.5k-px data URIs fit well under this
+const TIMEOUT = Number(process.env.REQUEST_TIMEOUT_S || 180) * 1000
 
 const send = (res, code, body, headers = {}) => {
   if (res.headersSent) return // an earlier guard already answered
@@ -180,10 +181,17 @@ const openaiRun = async (inputs, mode, res) => {
   form.append('image[]', await toBlob(inputs.model_image), 'person.png')
   form.append('image[]', await toBlob(inputs.garment_image), 'garment.png')
 
+  // Without this a stalled upstream leaves the browser waiting forever behind a
+  // progress bar that can only creep toward 100%.
   const upstream = await fetch('https://api.openai.com/v1/images/edits', {
     method: 'POST',
     headers: { authorization: `Bearer ${OPENAI_KEY}` },
     body: form,
+    signal: AbortSignal.timeout(TIMEOUT),
+  }).catch((e) => {
+    throw new Error(e.name === 'TimeoutError'
+      ? `Gave up after ${TIMEOUT / 1000}s. Try a tighter box, or set OPENAI_IMAGE_QUALITY=medium.`
+      : e.message)
   })
   const data = await upstream.json().catch(() => ({}))
   if (!upstream.ok) {

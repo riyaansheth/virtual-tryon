@@ -491,6 +491,110 @@ const shrink = (file) => new Promise((resolve, reject) => {
   img.src = URL.createObjectURL(file)
 })
 
+/* ---------- product cutout ---------- */
+// Jewellery is shot on coloured backdrops, and the model reads a big soft pink
+// rectangle as a garment. Flood-fill inwards from the edges to strip it, then
+// crop to what is left so the piece fills the frame on plain white.
+const cutout = async (src) => {
+  const img = await loadImage(src)
+  const w = img.naturalWidth
+  const h = img.naturalHeight
+  const c = Object.assign(document.createElement('canvas'), { width: w, height: h })
+  const ctx = c.getContext('2d', { willReadFrequently: true })
+  ctx.drawImage(img, 0, 0)
+  const image = ctx.getImageData(0, 0, w, h)
+  const px = image.data
+
+  // Learn the backdrop's palette from the border, in a coarse 32^3 colour cube.
+  // Comparing neighbours instead would walk up the anti-aliased ramp at the
+  // object's edge — each step is small even though the edge itself is not.
+  const key = (p) => ((px[p] >> 3) << 10) | ((px[p + 1] >> 3) << 5) | (px[p + 2] >> 3)
+  const palette = new Uint8Array(32 * 32 * 32)
+  const learn = (p) => {
+    const r = px[p] >> 3
+    const g = px[p + 1] >> 3
+    const b = px[p + 2] >> 3
+    // Dilate by one cell so noise and soft gradients still register.
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dg = -1; dg <= 1; dg++) {
+        for (let db = -1; db <= 1; db++) {
+          const rr = r + dr, gg = g + dg, bb = b + db
+          if (rr < 0 || rr > 31 || gg < 0 || gg > 31 || bb < 0 || bb > 31) continue
+          palette[(rr << 10) | (gg << 5) | bb] = 1
+        }
+      }
+    }
+  }
+  for (let x = 0; x < w; x++) { learn(x * 4); learn(((h - 1) * w + x) * 4) }
+  for (let y = 0; y < h; y++) { learn(y * w * 4); learn((y * w + w - 1) * 4) }
+
+  // Then flood inwards, but only through pixels that match that palette, so an
+  // enclosed patch of backdrop colour inside the product is left alone.
+  const isBg = new Uint8Array(w * h)
+  const stack = []
+  const seed = (i) => { if (!isBg[i] && palette[key(i * 4)]) { isBg[i] = 1; stack.push(i) } }
+  for (let x = 0; x < w; x++) { seed(x); seed((h - 1) * w + x) }
+  for (let y = 0; y < h; y++) { seed(y * w); seed(y * w + w - 1) }
+
+  while (stack.length) {
+    const i = stack.pop()
+    const x = i % w
+    const y = (i / w) | 0
+    if (x > 0) seed(i - 1)
+    if (x < w - 1) seed(i + 1)
+    if (y > 0) seed(i - w)
+    if (y < h - 1) seed(i + w)
+  }
+
+  let removed = 0
+  let minX = w, minY = h, maxX = -1, maxY = -1
+  for (let i = 0; i < isBg.length; i++) {
+    if (isBg[i]) {
+      removed++
+      const p = i * 4
+      px[p] = px[p + 1] = px[p + 2] = 255
+      continue
+    }
+    const x = i % w
+    const y = (i / w) | 0
+    if (x < minX) minX = x
+    if (x > maxX) maxX = x
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+  }
+
+  // Refuse to guess when the backdrop is busy (nothing stripped) or when the
+  // fill has eaten the product too (almost everything stripped).
+  const share = removed / (w * h)
+  if (share < 0.15 || share > 0.97 || maxX < 0) return src
+
+  ctx.putImageData(image, 0, 0)
+  const margin = Math.round(Math.max(maxX - minX, maxY - minY) * 0.04)
+  const sx = Math.max(0, minX - margin)
+  const sy = Math.max(0, minY - margin)
+  const sw = Math.min(w - sx, maxX - minX + 1 + margin * 2)
+  const sh = Math.min(h - sy, maxY - minY + 1 + margin * 2)
+
+  const out = Object.assign(document.createElement('canvas'), { width: sw, height: sh })
+  const o = out.getContext('2d')
+  o.fillStyle = '#fff'
+  o.fillRect(0, 0, sw, sh)
+  o.drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh)
+  return out.toDataURL('image/jpeg', 0.95)
+}
+
+// The cutout depends on the mode, so keep the original around to redo it from.
+async function refreshGarment() {
+  if (!state.garmentRaw) {
+    state.garment = null
+    $('thumbGarment').src = ''
+    return
+  }
+  state.garment = state.mode === 'jewellery' ? await cutout(state.garmentRaw) : state.garmentRaw
+  $('thumbGarment').src = state.garment
+  syncRun()
+}
+
 /* ---------- crop out, paste back ---------- */
 // The model repaints whatever it is shown, so it is only shown the region that
 // should change. Everything outside the box stays as the original pixels.
@@ -548,6 +652,10 @@ function setSlot(which, value) {
   const thumb = $(which === 'model' ? 'thumbModel' : 'thumbGarment')
   thumb.src = value || ''
   drop.classList.toggle('filled', Boolean(value))
+  if (which === 'garment') {
+    state.garmentRaw = value
+    refreshGarment()
+  }
   $(which === 'model' ? 'stepModel' : 'stepGarment').classList.toggle('done', Boolean(value))
   // A new photo invalidates whatever region was picked on the old one.
   if (which === 'model') {
@@ -598,6 +706,7 @@ document.querySelectorAll('[data-mode]').forEach((btn) =>
     $('dropGarment').setAttribute('aria-label', copy.label)
     // A necklace and a dress want very different regions, so reset the box.
     if (state.model) state.box = { ...copy.box }
+    refreshGarment() // cutout only applies in jewellery mode
     renderStage()
   }))
 

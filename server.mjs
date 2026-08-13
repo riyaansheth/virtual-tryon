@@ -104,6 +104,8 @@ const PROMPTS = {
   // render a necklace the size of a dinner plate unless told otherwise.
   jewellery: [
     'Add the jewellery shown in the second image onto the person in the first image.',
+    'The second image is a product shot on a plain backdrop — that backdrop is not',
+    'clothing and must be ignored entirely. Do not change what the person is wearing.',
     "Keep the person's face, hair, skin tone, pose, clothing and the background exactly as they are.",
     'Add only the jewellery, worn where that kind of piece is naturally worn:',
     'necklaces and pendants at the collarbone, earrings on the earlobes, rings on fingers,',

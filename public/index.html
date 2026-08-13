@@ -212,8 +212,9 @@ button, input { font: inherit; color: inherit; }
 .note { margin: 0; font-size: 11px; color: var(--muted); text-align: center; }
 
 /* ---------- stage ---------- */
-.stage-bar { display: flex; align-items: center; gap: 12px; min-height: 30px; }
-.status { font: 400 12px/1 var(--mono); color: var(--muted); }
+.stage-bar { display: flex; align-items: center; gap: 12px; min-height: 30px; flex-wrap: wrap; }
+.status { font: 400 12px/1.5 var(--mono); color: var(--muted); max-width: 100%; }
+.status.bad { color: #f0567c; }
 .status b { color: var(--violet-lit); font-weight: 500; }
 .stage-actions { margin-left: auto; display: flex; gap: 8px; }
 .ghost {
@@ -258,7 +259,18 @@ button, input { font: inherit; color: inherit; }
   cursor: crosshair;
   border-radius: 4px;
 }
-.select img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+/* pointer-events off so the image can never become the drag target and start a
+   native image-drag, which silently kills the pointer stream mid-gesture. */
+.select img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
 .sel-box {
   position: absolute;
   border: 1px solid var(--violet-lit);
@@ -348,15 +360,6 @@ button, input { font: inherit; color: inherit; }
 .meta { display: flex; justify-content: space-between; font: 500 10px/1 var(--mono); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
 .meta .time { color: var(--violet-lit); }
 
-.alert {
-  padding: 12px 14px;
-  border: 1px solid rgba(240, 86, 124, .45);
-  border-radius: 11px;
-  background: rgba(240, 86, 124, .09);
-  font-size: 13px;
-  color: #ffd8e1;
-}
-.alert b { display: block; font: 500 11px/1 var(--mono); letter-spacing: .16em; text-transform: uppercase; color: #f0567c; margin-bottom: 6px; }
 
 @media (max-width: 860px) {
   .work { grid-template-columns: 1fr; height: auto; }
@@ -419,8 +422,6 @@ button, input { font: inherit; color: inherit; }
         <a class="ghost" id="open" hidden target="_blank" rel="noopener">Open image ↗</a>
       </div>
     </div>
-
-    <div class="alert" id="alert" hidden></div>
 
     <div class="canvas" id="canvas"></div>
   </section>
@@ -564,7 +565,7 @@ async function takeFile(which, file) {
     setSlot(which, await shrink(file))
     hideAlert()
   } catch (e) {
-    showAlert('Image rejected', e.message)
+    showAlert(e.message)
   }
 }
 
@@ -618,15 +619,15 @@ const syncRun = () => {
   btn.textContent = state.result ? 'Generate again' : 'Generate'
 }
 
-const showAlert = (title, message) => {
-  const box = $('alert')
-  box.hidden = false
-  box.replaceChildren(
-    Object.assign(document.createElement('b'), { textContent: title }),
-    Object.assign(document.createElement('span'), { textContent: message }),
-  )
+// Failures share the status line rather than a banner that outlives the problem.
+const showAlert = (message) => {
+  $('status').className = 'status bad'
+  $('status').textContent = message
 }
-const hideAlert = () => { $('alert').hidden = true }
+const hideAlert = () => {
+  $('status').className = 'status'
+  if ($('status').textContent !== 'Ready') $('status').textContent = 'Ready'
+}
 
 const call = async (path, body) => {
   const res = await fetch(path, {
@@ -684,9 +685,8 @@ $('run').addEventListener('click', async () => {
     $('status').innerHTML = `<b>done</b> · ${((Date.now() - started) / 1000).toFixed(1)}s`
     loadCredits()
   } catch (e) {
-    showAlert('That did not work', e.message)
-    $('status').textContent = 'Ready'
     renderStage()
+    showAlert(e.message) // after renderStage, which would otherwise clear it
   } finally {
     clearInterval(tick)
     delete btn.dataset.busy
@@ -707,7 +707,7 @@ function renderStage() {
 function showSelector() {
   const wrap = document.createElement('div')
   wrap.className = 'select'
-  wrap.innerHTML = `<img alt="Your photo"><div class="sel-box"></div><div class="sel-hint"></div>`
+  wrap.innerHTML = `<img alt="Your photo" draggable="false"><div class="sel-box"></div><div class="sel-hint"></div>`
   const img = wrap.querySelector('img')
   const rect = wrap.querySelector('.sel-box')
   wrap.querySelector('.sel-hint').textContent = COPY[state.mode].hint
@@ -724,6 +724,7 @@ function showSelector() {
   paint()
 
   let start = null
+  let previous = null
   const at = (e) => {
     const r = wrap.getBoundingClientRect()
     return {
@@ -731,9 +732,28 @@ function showSelector() {
       y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height)),
     }
   }
-  wrap.addEventListener('pointerdown', (e) => { wrap.setPointerCapture(e.pointerId); start = at(e) })
+  const finish = () => {
+    if (!start) return
+    start = null
+    // A flick too small to be deliberate restores what was there before,
+    // rather than snapping to a default the user did not ask for.
+    if (state.box.w < 0.04 || state.box.h < 0.04) {
+      state.box = previous
+      paint()
+    }
+  }
+
+  wrap.addEventListener('pointerdown', (e) => {
+    e.preventDefault() // stops text/image drag from hijacking the gesture
+    wrap.setPointerCapture(e.pointerId)
+    previous = { ...state.box }
+    start = at(e)
+  })
   wrap.addEventListener('pointermove', (e) => {
     if (!start) return
+    // If a pointerup was missed (released off-window, capture lost), the box
+    // would otherwise keep following the cursor with no button held.
+    if (e.buttons === 0) return finish()
     const p = at(e)
     state.box = {
       x: Math.min(start.x, p.x), y: Math.min(start.y, p.y),
@@ -741,14 +761,9 @@ function showSelector() {
     }
     paint()
   })
-  wrap.addEventListener('pointerup', () => {
-    start = null
-    // A stray click would otherwise leave a zero-size region.
-    if (state.box.w < 0.05 || state.box.h < 0.05) {
-      state.box = { ...COPY[state.mode].box }
-      paint()
-    }
-  })
+  wrap.addEventListener('pointerup', finish)
+  wrap.addEventListener('pointercancel', finish)
+  wrap.addEventListener('lostpointercapture', finish)
 
   $('canvas').replaceChildren(wrap)
   $('rearea').hidden = true
@@ -826,7 +841,7 @@ async function loadCredits() {
   $('keyDot').className = ok ? 'dot ok' : 'dot bad'
   $('keyText').textContent = ok ? 'ready' : 'no API key'
   if (!ok) {
-    showAlert('Not configured', 'Add the API key on the server, then restart it.')
+    showAlert('Not configured — add the API key on the server, then restart it.')
     return
   }
   // Only one provider reports a balance, and it is a nicety, not a health check.

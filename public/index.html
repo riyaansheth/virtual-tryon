@@ -451,7 +451,7 @@ const COPY = {
     label: 'Add the jewellery',
     cue: 'Drop, click or paste a photo of the piece',
     head: 'Put the jewellery on the person.',
-    hint: 'Drag a box over where the piece goes',
+    hint: 'Drag a box where the piece should sit',
     box: { x: 0.24, y: 0.12, w: 0.52, h: 0.44 },
   },
 }
@@ -566,33 +566,79 @@ const cutout = async (src) => {
   }
 
   // Refuse to guess when the backdrop is busy (nothing stripped) or when the
-  // fill has eaten the product too (almost everything stripped).
+  // fill has eaten the product too. The upper bound has to be generous: a thin
+  // chain on a large backdrop is legitimately 97%+ background.
   const share = removed / (w * h)
-  if (share < 0.15 || share > 0.97 || maxX < 0) return src
+  const kept = w * h - removed
+  const wideEnough = maxX - minX > w * 0.02 && maxY - minY > h * 0.02
+  if (share < 0.15 || share > 0.9995 || kept < 200 || !wideEnough || maxX < 0) return src
 
-  ctx.putImageData(image, 0, 0)
   const margin = Math.round(Math.max(maxX - minX, maxY - minY) * 0.04)
   const sx = Math.max(0, minX - margin)
   const sy = Math.max(0, minY - margin)
   const sw = Math.min(w - sx, maxX - minX + 1 + margin * 2)
   const sh = Math.min(h - sy, maxY - minY + 1 + margin * 2)
 
-  const out = Object.assign(document.createElement('canvas'), { width: sw, height: sh })
-  const o = out.getContext('2d')
-  o.fillStyle = '#fff'
-  o.fillRect(0, 0, sw, sh)
-  o.drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh)
-  return out.toDataURL('image/jpeg', 0.95)
+  // Flat: backdrop painted white, for a provider that would render alpha black.
+  ctx.putImageData(image, 0, 0)
+  const flatC = Object.assign(document.createElement('canvas'), { width: sw, height: sh })
+  const f = flatC.getContext('2d')
+  f.fillStyle = '#fff'
+  f.fillRect(0, 0, sw, sh)
+  f.drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh)
+
+  // Cut: backdrop knocked out, for compositing the real product onto a photo.
+  for (let i = 0; i < isBg.length; i++) if (isBg[i]) px[i * 4 + 3] = 0
+  ctx.putImageData(image, 0, 0)
+  const cutC = Object.assign(document.createElement('canvas'), { width: sw, height: sh })
+  cutC.getContext('2d').drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh)
+
+  return { flat: flatC.toDataURL('image/jpeg', 0.95), cut: cutC.toDataURL('image/png') }
+}
+
+// The photo is never regenerated: it is drawn as-is and the product is placed
+// on top, so proportions, face and background are the originals by definition.
+const overlay = async (photoSrc, pieceSrc, box) => {
+  const [base, piece] = await Promise.all([loadImage(photoSrc), loadImage(pieceSrc)])
+  const W = base.naturalWidth
+  const H = base.naturalHeight
+  const out = Object.assign(document.createElement('canvas'), { width: W, height: H })
+  const ctx = out.getContext('2d')
+  ctx.drawImage(base, 0, 0)
+
+  const bw = box.w * W
+  const bh = box.h * H
+  const scale = Math.min(bw / piece.naturalWidth, bh / piece.naturalHeight)
+  const pw = piece.naturalWidth * scale
+  const ph = piece.naturalHeight * scale
+  const px = box.x * W + (bw - pw) / 2
+  const py = box.y * H + (bh - ph) / 2
+
+  // A whisper of shadow stops it reading as a sticker.
+  ctx.shadowColor = 'rgba(0, 0, 0, .35)'
+  ctx.shadowBlur = Math.max(2, ph * 0.02)
+  ctx.shadowOffsetY = Math.max(1, ph * 0.008)
+  ctx.drawImage(piece, px, py, pw, ph)
+  return out.toDataURL('image/png')
 }
 
 // The cutout depends on the mode, so keep the original around to redo it from.
 async function refreshGarment() {
   if (!state.garmentRaw) {
     state.garment = null
+    state.piece = null
     $('thumbGarment').src = ''
     return
   }
-  state.garment = state.mode === 'jewellery' ? await cutout(state.garmentRaw) : state.garmentRaw
+  if (state.mode !== 'jewellery') {
+    state.garment = state.garmentRaw
+    state.piece = null
+  } else {
+    const cut = await cutout(state.garmentRaw)
+    // A string back means the backdrop was too busy to strip safely.
+    state.garment = typeof cut === 'string' ? cut : cut.flat
+    state.piece = typeof cut === 'string' ? null : cut.cut
+  }
   $('thumbGarment').src = state.garment
   syncRun()
 }
@@ -801,6 +847,19 @@ $('run').addEventListener('click', async () => {
   }, 200)
 
   try {
+    // Jewellery never goes to a model: the piece is placed on the untouched
+    // photo, so the result is the original image plus the real product.
+    if (state.mode === 'jewellery') {
+      if (!state.piece) {
+        throw new Error('Could not separate the piece from its backdrop. Use a product shot on a plain background.')
+      }
+      state.result = await overlay(state.model, state.piece, state.box)
+      state.editing = false
+      show(state.result)
+      $('status').innerHTML = `<b>done</b> · ${((Date.now() - started) / 1000).toFixed(1)}s`
+      return
+    }
+
     // Send only the selected region, so the face and background are never at risk.
     const region = await cropToBox(state.model, state.box)
     const started_ = await call('/api/run', {

@@ -185,6 +185,11 @@ input[type="range"] { flex: 1; accent-color: var(--violet); }
       <button type="button" data-kind="ring" aria-pressed="false">Ring</button>
     </div>
 
+    <div class="kinds" role="group" aria-label="How to render it" style="grid-template-columns: 1fr 1fr">
+      <button type="button" data-render="worn" aria-pressed="true">Worn</button>
+      <button type="button" data-render="instant" aria-pressed="false">Instant</button>
+    </div>
+
     <ol class="steps">
       <li class="step" id="stepPiece">
         <div class="step-head"><span class="step-n">1</span><span class="step-label" id="pieceLabel">Add the necklace</span></div>
@@ -257,8 +262,8 @@ const COPY = {
 }
 
 const state = {
-  kind: 'necklace',
-  photo: null, pieceRaw: null, piece: null,
+  kind: 'necklace', render: 'worn',
+  photo: null, pieceRaw: null, piece: null, pieceFlat: null,
   photoImg: null, pieceImg: null,
   anchors: null,           // measured from the photo
   scale: 1, turn: 0, nudge: { x: 0, y: 0 },
@@ -344,14 +349,26 @@ const cutout = async (src) => {
   const wide = maxX - minX > w * 0.02 && maxY - minY > h * 0.02
   if (share < 0.15 || share > 0.9995 || !wide || maxX < 0) return null
 
-  ctx.putImageData(image, 0, 0)
   const m = Math.round(Math.max(maxX - minX, maxY - minY) * 0.03)
   const sx = Math.max(0, minX - m), sy = Math.max(0, minY - m)
   const sw = Math.min(w - sx, maxX - minX + 1 + m * 2)
   const sh = Math.min(h - sy, maxY - minY + 1 + m * 2)
+
+  // Flat on white for the model, which renders alpha as black.
+  ctx.putImageData(image, 0, 0)
+  const flat = canvasOf(sw, sh)
+  const fx = flat.getContext('2d')
+  fx.fillStyle = '#fff'
+  fx.fillRect(0, 0, sw, sh)
+  fx.drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh)
+
+  // Knocked out for the instant overlay.
+  for (let i = 0; i < isBg.length; i++) if (isBg[i]) px[i * 4 + 3] = 0
+  ctx.putImageData(image, 0, 0)
   const out = canvasOf(sw, sh)
   out.getContext('2d').drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh)
-  return out.toDataURL('image/png')
+
+  return { cut: out.toDataURL('image/png'), flat: flat.toDataURL('image/jpeg', 0.95) }
 }
 
 /* ---------- step 1: landmarks ---------- */
@@ -450,6 +467,7 @@ const measure = async (img) => {
       width: shoulders.span * 0.62,
       angle: shoulders.angle,
       anchorTop: true,
+      chinY: chin.y,
     }]
   }
   // Face-only fallback: the jaw is the only ruler available.
@@ -459,7 +477,76 @@ const measure = async (img) => {
     width: faceWidth * 1.45,
     angle: jawAngle,
     anchorTop: true,
+    chinY: chin.y,
   }]
+}
+
+/* ---------- worn: let the model render it, but only below the jaw ---------- */
+// The region is derived from the same landmarks. Because it starts under the
+// chin, the face is not in the picture the model sees and cannot be altered.
+const wornRegion = (img, anchors) => {
+  const W = img.naturalWidth, H = img.naturalHeight
+  const a = anchors[0]
+  const chinY = a.chinY
+  const span = a.width / 0.62 // undo the necklace ratio to recover the span
+  const top = Math.max(0, Math.min(chinY + span * 0.04, H - 8))
+  const half = Math.min(W / 2, span * 0.62)
+  const left = Math.max(0, a.cx - half)
+  const right = Math.min(W, a.cx + half)
+  const bottom = Math.min(H, a.cy + span * 0.55)
+  return { x: left, y: top, w: Math.max(16, right - left), h: Math.max(16, bottom - top) }
+}
+
+const cropRegion = (img, r) => {
+  const c = canvasOf(Math.round(r.w), Math.round(r.h))
+  c.getContext('2d').drawImage(img, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height)
+  return c.toDataURL('image/jpeg', 0.95)
+}
+
+// Paste the rendered region back, matched to the photo's exposure and feathered,
+// so the join does not read as a rectangle.
+const pasteRegion = async (img, patchSrc, r) => {
+  const patch = await loadImage(patchSrc)
+  const W = img.naturalWidth, H = img.naturalHeight
+  const out = canvasOf(W, H)
+  const ctx = out.getContext('2d', { willReadFrequently: true })
+  ctx.drawImage(img, 0, 0)
+
+  const dw = Math.round(r.w), dh = Math.round(r.h)
+  const dx = Math.round(r.x), dy = Math.round(r.y)
+  const tmp = canvasOf(dw, dh)
+  const t = tmp.getContext('2d', { willReadFrequently: true })
+  t.drawImage(patch, 0, 0, dw, dh)
+
+  const ring = Math.max(2, Math.round(Math.min(dw, dh) * 0.08))
+  const pd = t.getImageData(0, 0, dw, dh)
+  const bd = ctx.getImageData(dx, dy, dw, dh)
+  let n = 0
+  const sums = [0, 0, 0, 0, 0, 0]
+  for (let y = 0; y < dh; y++) {
+    const edge = y < ring || y >= dh - ring
+    for (let x = 0; x < dw; x++) {
+      if (!edge && x >= ring && x < dw - ring) continue
+      const i = (y * dw + x) * 4
+      sums[0] += pd.data[i]; sums[1] += pd.data[i + 1]; sums[2] += pd.data[i + 2]
+      sums[3] += bd.data[i]; sums[4] += bd.data[i + 1]; sums[5] += bd.data[i + 2]
+      n++
+    }
+  }
+  if (n) {
+    const shift = [sums[3] / n - sums[0] / n, sums[4] / n - sums[1] / n, sums[5] / n - sums[2] / n]
+    for (let i = 0; i < pd.data.length; i += 4) {
+      pd.data[i] += shift[0]; pd.data[i + 1] += shift[1]; pd.data[i + 2] += shift[2]
+    }
+    t.putImageData(pd, 0, 0)
+  }
+  const feather = Math.max(3, Math.round(Math.min(dw, dh) * 0.1))
+  t.globalCompositeOperation = 'destination-in'
+  t.filter = `blur(${feather}px)`
+  t.fillStyle = '#fff'
+  t.fillRect(feather, feather, dw - 2 * feather, dh - 2 * feather)
+  ctx.drawImage(tmp, dx, dy)
+  return out.toDataURL('image/png')
 }
 
 /* ---------- step 4: occlusion ---------- */
@@ -528,17 +615,19 @@ const setPiece = async (value) => {
   state.pieceRaw = value
   $('dropPiece').classList.toggle('filled', Boolean(value))
   $('stepPiece').classList.toggle('done', Boolean(value))
-  if (!value) { state.piece = null; state.pieceImg = null; $('thumbPiece').src = ''; return sync() }
+  if (!value) { state.piece = null; state.pieceFlat = null; state.pieceImg = null; $('thumbPiece').src = ''; return sync() }
   const cut = await cutout(value)
   if (!cut) {
     state.piece = null
+    state.pieceFlat = null
     $('thumbPiece').src = value
     fail('Could not separate that piece from its backdrop. Use a product shot on a plain background.')
     return sync()
   }
-  state.piece = cut
-  state.pieceImg = await loadImage(cut)
-  $('thumbPiece').src = cut
+  state.piece = cut.cut
+  state.pieceFlat = cut.flat
+  state.pieceImg = await loadImage(cut.cut)
+  $('thumbPiece').src = cut.cut
   clearFail()
   sync()
 }
@@ -577,6 +666,15 @@ window.addEventListener('paste', (e) => {
   const file = [...e.clipboardData.files][0]
   if (file) shrink(file).then(target).catch((err) => fail(err.message))
 })
+
+document.querySelectorAll('[data-render]').forEach((btn) =>
+  btn.addEventListener('click', () => {
+    state.render = btn.dataset.render
+    document.querySelectorAll('[data-render]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)))
+    $('hint').textContent = state.render === 'worn'
+      ? 'The model renders the piece on your body — but only below the chin, so your face is never in what it sees.'
+      : 'The piece is placed on your photo untouched. Instant, but it sits flat.'
+  }))
 
 document.querySelectorAll('[data-kind]').forEach((btn) =>
   btn.addEventListener('click', async () => {
@@ -645,6 +743,38 @@ $('place').addEventListener('click', async () => {
     state.nudge = { x: 0, y: 0 }
     $('size').value = 100
     $('turn').value = 0
+
+    // Worn: the model renders the piece on the body, but only sees a strip
+    // that starts below the chin, so the face is not its to change.
+    if (state.render === 'worn') {
+      const region = wornRegion(state.photoImg, state.anchors)
+      working('rendering it worn', 60)
+      const res = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'jewellery',
+          inputs: { model_image: cropRegion(state.photoImg, region), garment_image: state.pieceFlat },
+        }),
+      })
+      const data = await res.json().catch(() => ({ message: `HTTP ${res.status}` }))
+      if (!res.ok || (typeof data.error === 'string' && data.error)) {
+        throw new Error(data.message || data.error || `HTTP ${res.status}`)
+      }
+      const painted = (data.output || [])[0]
+      if (!painted) throw new Error('The service returned no image.')
+      working('blending', 90)
+      state.result = await pasteRegion(state.photoImg, painted, region)
+      const out = $('out') || Object.assign(document.createElement('img'), { id: 'out' })
+      out.src = state.result
+      if (!out.parentElement) $('canvas').replaceChildren(out)
+      $('open').hidden = false
+      $('open').href = state.result
+      $('reset').hidden = false
+      $('tune').hidden = true
+      say(`<b>worn</b> · ${((Date.now() - t) / 1000).toFixed(1)}s · face untouched`)
+      return
+    }
 
     if (state.kind !== 'ring' && $('occlude').checked) {
       working('separating hair', 75)

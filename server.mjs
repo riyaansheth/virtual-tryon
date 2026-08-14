@@ -11,6 +11,9 @@ const OPENAI_QUALITY = process.env.OPENAI_IMAGE_QUALITY
 const OPENAI_SIZE = process.env.OPENAI_IMAGE_SIZE
 // tryon-v1.6 is the accurate default at 1 credit; tryon-max trades credits for
 // resolution up to 4k. Quality mode costs no extra credits, only seconds.
+// Jewellery renders at high quality; the size is computed per photo by the
+// client so framing survives. Clothing is deliberately not affected by these.
+const JEWEL_QUALITY = process.env.JEWEL_IMAGE_QUALITY || 'high'
 const FASHN_MODEL = process.env.FASHN_MODEL || 'tryon-v1.6'
 const FASHN_MODE = process.env.FASHN_MODE || 'quality'
 const FASHN_RESOLUTION = process.env.FASHN_RESOLUTION || '2k'
@@ -172,12 +175,22 @@ const fashnRun = async (inputs, mode, res) => {
   send(res, upstream.status, await upstream.text())
 }
 
-const openaiRun = async (inputs, mode, res) => {
+const openaiRun = async (inputs, mode, res, opts = {}) => {
   const form = new FormData()
   form.append('model', OPENAI_MODEL)
   form.append('prompt', PROMPTS[mode] || PROMPTS.clothing)
-  if (OPENAI_QUALITY) form.append('quality', OPENAI_QUALITY)
-  if (OPENAI_SIZE) form.append('size', OPENAI_SIZE)
+  if (mode === 'jewellery') {
+    // A chain's identity lives in detail a few pixels wide. At the ~1024px the
+    // API picks by default there is no room to draw a link, so it renders
+    // chain-like texture instead. Ask for the pixels, and the quality tier that
+    // uses them. Size comes from the client so the photo's framing is kept.
+    form.append('quality', JEWEL_QUALITY)
+    if (opts.size) form.append('size', opts.size)
+  } else {
+    // Clothing: unchanged. Nothing is sent unless it is explicitly configured.
+    if (OPENAI_QUALITY) form.append('quality', OPENAI_QUALITY)
+    if (OPENAI_SIZE) form.append('size', OPENAI_SIZE)
+  }
   form.append('image[]', await toBlob(inputs.model_image), 'person.png')
   form.append('image[]', await toBlob(inputs.garment_image), 'garment.png')
 
@@ -250,11 +263,11 @@ export const handler = async (req, res) => {
 
   // The client sends only the two images; provider-specific payloads are built here.
   if (pathname === '/api/run') {
-    const { inputs = {}, mode = 'clothing' } = JSON.parse(await readBody(req, res))
+    const { inputs = {}, mode = 'clothing', size } = JSON.parse(await readBody(req, res))
     if (!inputs.model_image || !inputs.garment_image) {
       return err(res, 400, 'MissingImage', 'Both photos are required.')
     }
-    return PROVIDER === 'openai' ? openaiRun(inputs, mode, res) : fashnRun(inputs, mode, res)
+    return PROVIDER === 'openai' ? openaiRun(inputs, mode, res, { size }) : fashnRun(inputs, mode, res)
   }
 
   if (PROVIDER === 'openai') {

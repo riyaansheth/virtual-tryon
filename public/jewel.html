@@ -577,6 +577,18 @@ const render = () => {
   $('tune').hidden = false
 }
 
+// Ask for roughly 3.1 megapixels at the photo's own aspect ratio. Letting the
+// API choose gives ~1024px, where a chain link is about five pixels across and
+// cannot be drawn — this puts ~25 pixels on each link instead. Edges must be
+// multiples of 16, no edge over 3840, and the total must stay under 8.3MP.
+const renderSize = (img) => {
+  const ratio = img.naturalWidth / img.naturalHeight
+  const snap = (v) => Math.max(256, Math.min(3840, Math.round(v / 16) * 16))
+  const w = snap(Math.sqrt(3.1e6 * ratio))
+  const h = snap(Math.sqrt(3.1e6 / ratio))
+  return `${w}x${h}`
+}
+
 /* ---------- intake ---------- */
 const setPiece = async (value) => {
   state.pieceRaw = value
@@ -724,6 +736,7 @@ $('place').addEventListener('click', async () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           mode: 'jewellery',
+          size: renderSize(state.photoImg),
           inputs: { model_image: state.photo, garment_image: state.pieceFlat },
         }),
       })

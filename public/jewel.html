@@ -217,7 +217,7 @@ input[type="range"] { flex: 1; accent-color: var(--violet); }
     </div>
 
     <button class="act" id="place" disabled>Add both images to start</button>
-    <p class="note" id="hint">Placement is measured from your photo — nothing is repainted.</p>
+    <p class="note" id="hint">The whole photo goes to the model and comes back with the piece worn — same approach as the clothing tool.</p>
   </aside>
 
   <section class="stage">
@@ -505,74 +505,6 @@ const measure = async (img) => {
   }]
 }
 
-/* ---------- worn: let the model render it, but only below the jaw ---------- */
-// The region is derived from the same landmarks. Because it starts under the
-// chin, the face is not in the picture the model sees and cannot be altered.
-const wornRegion = (img, anchors) => {
-  const W = img.naturalWidth, H = img.naturalHeight
-  const a = anchors[0]
-  const chinY = a.chinY
-  const span = a.width / 0.62 // undo the necklace ratio to recover the span
-  const top = Math.max(0, Math.min(chinY + span * 0.04, H - 8))
-  const half = Math.min(W / 2, span * 0.62)
-  const left = Math.max(0, a.cx - half)
-  const right = Math.min(W, a.cx + half)
-  const bottom = Math.min(H, a.cy + span * 0.55)
-  return { x: left, y: top, w: Math.max(16, right - left), h: Math.max(16, bottom - top) }
-}
-
-const cropRegion = (img, r) => {
-  const c = canvasOf(Math.round(r.w), Math.round(r.h))
-  c.getContext('2d').drawImage(img, r.x, r.y, r.w, r.h, 0, 0, c.width, c.height)
-  return c.toDataURL('image/jpeg', 0.95)
-}
-
-// Paste the rendered region back, matched to the photo's exposure and feathered,
-// so the join does not read as a rectangle.
-const pasteRegion = async (img, patchSrc, r) => {
-  const patch = await loadImage(patchSrc)
-  const W = img.naturalWidth, H = img.naturalHeight
-  const out = canvasOf(W, H)
-  const ctx = out.getContext('2d', { willReadFrequently: true })
-  ctx.drawImage(img, 0, 0)
-
-  const dw = Math.round(r.w), dh = Math.round(r.h)
-  const dx = Math.round(r.x), dy = Math.round(r.y)
-  const tmp = canvasOf(dw, dh)
-  const t = tmp.getContext('2d', { willReadFrequently: true })
-  t.drawImage(patch, 0, 0, dw, dh)
-
-  const ring = Math.max(2, Math.round(Math.min(dw, dh) * 0.08))
-  const pd = t.getImageData(0, 0, dw, dh)
-  const bd = ctx.getImageData(dx, dy, dw, dh)
-  let n = 0
-  const sums = [0, 0, 0, 0, 0, 0]
-  for (let y = 0; y < dh; y++) {
-    const edge = y < ring || y >= dh - ring
-    for (let x = 0; x < dw; x++) {
-      if (!edge && x >= ring && x < dw - ring) continue
-      const i = (y * dw + x) * 4
-      sums[0] += pd.data[i]; sums[1] += pd.data[i + 1]; sums[2] += pd.data[i + 2]
-      sums[3] += bd.data[i]; sums[4] += bd.data[i + 1]; sums[5] += bd.data[i + 2]
-      n++
-    }
-  }
-  if (n) {
-    const shift = [sums[3] / n - sums[0] / n, sums[4] / n - sums[1] / n, sums[5] / n - sums[2] / n]
-    for (let i = 0; i < pd.data.length; i += 4) {
-      pd.data[i] += shift[0]; pd.data[i + 1] += shift[1]; pd.data[i + 2] += shift[2]
-    }
-    t.putImageData(pd, 0, 0)
-  }
-  const feather = Math.max(3, Math.round(Math.min(dw, dh) * 0.1))
-  t.globalCompositeOperation = 'destination-in'
-  t.filter = `blur(${feather}px)`
-  t.fillStyle = '#fff'
-  t.fillRect(feather, feather, dw - 2 * feather, dh - 2 * feather)
-  ctx.drawImage(tmp, dx, dy)
-  return out.toDataURL('image/png')
-}
-
 /* ---------- step 4: occlusion ---------- */
 const hairLayer = async (img) => {
   const seg = (await segTask()).segment(img)
@@ -696,7 +628,7 @@ document.querySelectorAll('[data-render]').forEach((btn) =>
     state.render = btn.dataset.render
     document.querySelectorAll('[data-render]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)))
     $('hint').textContent = state.render === 'worn'
-      ? 'The model renders the piece on your body — but only below the chin, so your face is never in what it sees.'
+      ? 'The whole photo goes to the model and comes back with the piece worn — same approach as the clothing tool.'
       : 'The piece is placed on your photo untouched. Instant, but it sits flat.'
   }))
 
@@ -758,27 +690,18 @@ $('place').addEventListener('click', async () => {
   $('place').disabled = true
   clearFail()
   try {
-    working('loading engine', 10)
-    await getVision()
-    working('finding landmarks', 40)
-    state.anchors = await measure(state.photoImg)
-    state.scale = 1
-    state.turn = 0
-    state.nudge = { x: 0, y: 0 }
-    $('size').value = 100
-    $('turn').value = 0
-
-    // Worn: the model renders the piece on the body, but only sees a strip
-    // that starts below the chin, so the face is not its to change.
+    // Worn: the whole photo goes to the model and the whole photo comes back,
+    // exactly as the clothing tool works. Cropping to a strip and stitching it
+    // in was the thing making these look pasted — the model reproduces the
+    // scene faithfully when it can see all of it.
     if (state.render === 'worn') {
-      const region = wornRegion(state.photoImg, state.anchors)
-      working('rendering it worn', 60)
+      working('rendering it worn', 45)
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           mode: 'jewellery',
-          inputs: { model_image: cropRegion(state.photoImg, region), garment_image: state.pieceFlat },
+          inputs: { model_image: state.photo, garment_image: state.pieceFlat },
         }),
       })
       const data = await res.json().catch(() => ({ message: `HTTP ${res.status}` }))
@@ -787,8 +710,7 @@ $('place').addEventListener('click', async () => {
       }
       const painted = (data.output || [])[0]
       if (!painted) throw new Error('The service returned no image.')
-      working('blending', 90)
-      state.result = await pasteRegion(state.photoImg, painted, region)
+      state.result = painted
       const out = $('out') || Object.assign(document.createElement('img'), { id: 'out' })
       out.src = state.result
       if (!out.parentElement) $('canvas').replaceChildren(out)
@@ -796,9 +718,19 @@ $('place').addEventListener('click', async () => {
       $('open').href = state.result
       $('reset').hidden = false
       $('tune').hidden = true
-      say(`<b>worn</b> · ${((Date.now() - t) / 1000).toFixed(1)}s · face untouched`)
+      say(`<b>worn</b> · ${((Date.now() - t) / 1000).toFixed(1)}s`)
       return
     }
+
+    working('loading engine', 20)
+    await getVision()
+    working('finding landmarks', 45)
+    state.anchors = await measure(state.photoImg)
+    state.scale = 1
+    state.turn = 0
+    state.nudge = { x: 0, y: 0 }
+    $('size').value = 100
+    $('turn').value = 0
 
     if (state.kind !== 'ring' && $('occlude').checked) {
       working('separating hair', 75)

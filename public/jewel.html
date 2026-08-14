@@ -695,7 +695,13 @@ $('place').addEventListener('click', async () => {
     // in was the thing making these look pasted — the model reproduces the
     // scene faithfully when it can see all of it.
     if (state.render === 'worn') {
-      working('rendering it worn', 45)
+      // The wait is one long blocking call with no progress to report, so the
+      // bar eases on elapsed time rather than freezing at a number.
+      const tick = setInterval(() => {
+        const secs = (Date.now() - t) / 1000
+        working('rendering it worn', Math.round(100 * (1 - Math.exp(-secs / 22))))
+      }, 250)
+      try {
       const res = await fetch('/api/run', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -720,6 +726,9 @@ $('place').addEventListener('click', async () => {
       $('tune').hidden = true
       say(`<b>worn</b> · ${((Date.now() - t) / 1000).toFixed(1)}s`)
       return
+      } finally {
+        clearInterval(tick)
+      }
     }
 
     working('loading engine', 20)

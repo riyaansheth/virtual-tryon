@@ -5,10 +5,10 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 const FASHN_KEY = process.env.FASHN_API_KEY
 const OPENAI_KEY = process.env.OPENAI_API_KEY
 const OPENAI_MODEL = process.env.OPENAI_IMAGE_MODEL || 'gpt-image-2'
-// The cost/quality dial. 'low' is a few cents; 'high' is several times that.
-const OPENAI_QUALITY = process.env.OPENAI_IMAGE_QUALITY || 'high'
-// Portrait, because a try-on is always a standing person. Edges must be /16.
-const OPENAI_SIZE = process.env.OPENAI_IMAGE_SIZE || '1024x1536'
+// Both unset by default, so the API picks — which is how the results everyone
+// liked were produced. Set them only to override deliberately.
+const OPENAI_QUALITY = process.env.OPENAI_IMAGE_QUALITY
+const OPENAI_SIZE = process.env.OPENAI_IMAGE_SIZE
 // tryon-v1.6 is the accurate default at 1 credit; tryon-max trades credits for
 // resolution up to 4k. Quality mode costs no extra credits, only seconds.
 const FASHN_MODEL = process.env.FASHN_MODEL || 'tryon-v1.6'
@@ -176,8 +176,8 @@ const openaiRun = async (inputs, mode, res) => {
   const form = new FormData()
   form.append('model', OPENAI_MODEL)
   form.append('prompt', PROMPTS[mode] || PROMPTS.clothing)
-  form.append('quality', OPENAI_QUALITY)
-  form.append('size', OPENAI_SIZE)
+  if (OPENAI_QUALITY) form.append('quality', OPENAI_QUALITY)
+  if (OPENAI_SIZE) form.append('size', OPENAI_SIZE)
   form.append('image[]', await toBlob(inputs.model_image), 'person.png')
   form.append('image[]', await toBlob(inputs.garment_image), 'garment.png')
 

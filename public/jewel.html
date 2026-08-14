@@ -46,11 +46,8 @@ button, input { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--violet-lit); outline-offset: 2px; }
 
 .top {
-  display: flex;
-  align-items: baseline;
-  gap: 14px;
-  padding: 22px 28px 18px;
-  border-bottom: 1px solid var(--line);
+  display: flex; align-items: baseline; gap: 14px;
+  padding: 22px 28px 18px; border-bottom: 1px solid var(--line);
 }
 .mark { font: 700 22px/1 var(--display); letter-spacing: -.03em; }
 .mark span { color: var(--violet-lit); }
@@ -61,14 +58,12 @@ button, input { font: inherit; color: inherit; }
   padding: 7px 13px; border: 1px solid var(--line); border-radius: 999px;
   background: var(--panel); font: 500 12px/1 var(--mono); color: var(--muted);
 }
-.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); transition: background .2s; }
 .dot.ok { background: var(--violet-lit); box-shadow: 0 0 10px var(--violet); }
 
 .work { display: grid; grid-template-columns: 330px 1fr; height: calc(100% - 63px); }
 .rail {
-  border-right: 1px solid var(--line);
-  padding: 22px 20px;
-  overflow-y: auto;
+  border-right: 1px solid var(--line); padding: 22px 20px; overflow-y: auto;
   display: flex; flex-direction: column; gap: 18px;
 }
 .stage { padding: 24px 28px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
@@ -76,10 +71,12 @@ button, input { font: inherit; color: inherit; }
 .kinds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
 .kinds button {
   padding: 9px 4px; border: 0; border-radius: 8px; background: transparent;
-  color: var(--muted); font: 500 11px/1 var(--body); cursor: pointer; transition: background .18s, color .18s;
+  color: var(--muted); font: 500 11px/1 var(--body); cursor: pointer;
+  transition: background .18s, color .18s;
 }
 .kinds button:hover { color: var(--white); }
 .kinds button[aria-pressed="true"] { background: linear-gradient(160deg, var(--violet), var(--violet-deep)); color: var(--white); }
+.kinds-note { margin: -10px 0 0; font-size: 11px; color: var(--muted); text-align: center; min-height: 1.4em; }
 
 .steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 18px; }
 .step { display: flex; flex-direction: column; gap: 9px; position: relative; }
@@ -101,7 +98,11 @@ button, input { font: inherit; color: inherit; }
 .drop:hover, .drop.over { border-color: var(--violet-lit); background: var(--panel-lit); }
 .drop.filled { border-style: solid; border-color: var(--line); }
 .cue { text-align: center; padding: 12px; pointer-events: none; font-size: 12px; color: var(--muted); line-height: 1.45; }
-.thumb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity .25s; background: repeating-conic-gradient(#1b1526 0% 25%, #120e1c 0% 50%) 50% / 16px 16px; }
+.thumb {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+  opacity: 0; transition: opacity .25s;
+  background: repeating-conic-gradient(#1b1526 0% 25%, #120e1c 0% 50%) 50% / 16px 16px;
+}
 .drop.filled .thumb { opacity: 1; }
 .drop.filled .cue { display: none; }
 .clear {
@@ -110,13 +111,6 @@ button, input { font: inherit; color: inherit; }
   cursor: pointer; line-height: 1; display: none; z-index: 1;
 }
 .drop.filled + .clear { display: block; }
-
-.tune { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; border-top: 1px solid var(--line); }
-.tune-row { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
-.tune-row label { flex: none; width: 42px; }
-input[type="range"] { flex: 1; accent-color: var(--violet); }
-.toggle { display: flex; align-items: center; gap: 9px; font-size: 12px; color: var(--muted); cursor: pointer; }
-.toggle input { accent-color: var(--violet); width: 15px; height: 15px; }
 
 .act {
   width: 100%; padding: 16px; border: 0; border-radius: 12px;
@@ -145,8 +139,7 @@ input[type="range"] { flex: 1; accent-color: var(--violet); }
   background: linear-gradient(180deg, var(--panel-lit), var(--panel));
   display: grid; place-items: center; overflow: hidden; position: relative;
 }
-#out { max-width: 100%; max-height: 100%; display: block; cursor: grab; touch-action: none; }
-#out.dragging { cursor: grabbing; }
+#out { max-width: 100%; max-height: 100%; display: block; }
 
 .empty { text-align: center; padding: 40px 20px; display: grid; gap: 14px; justify-items: center; }
 .empty-seam { width: 1px; height: 88px; background: linear-gradient(180deg, transparent, var(--violet-lit), transparent); }
@@ -173,7 +166,7 @@ input[type="range"] { flex: 1; accent-color: var(--violet); }
   <div class="mark">Dizrupt<span>.</span></div>
   <div class="top-sub">Jewels</div>
   <div class="top-right">
-    <span class="pill"><i class="dot" id="engineDot"></i><span id="engineText">on-device</span></span>
+    <span class="pill"><i class="dot" id="kindDot"></i><span id="kindText">no piece yet</span></span>
   </div>
 </header>
 
@@ -185,15 +178,11 @@ input[type="range"] { flex: 1; accent-color: var(--violet); }
       <button type="button" data-kind="ring" aria-pressed="false">Ring</button>
       <button type="button" data-kind="bracelet" aria-pressed="false">Bracelet</button>
     </div>
-
-    <div class="kinds" role="group" aria-label="How to render it" style="grid-template-columns: 1fr 1fr">
-      <button type="button" data-render="worn" aria-pressed="true">Worn</button>
-      <button type="button" data-render="instant" aria-pressed="false">Instant</button>
-    </div>
+    <p class="kinds-note" id="kindsNote">Set automatically from the product photo. Change it if it guesses wrong.</p>
 
     <ol class="steps">
       <li class="step" id="stepPiece">
-        <div class="step-head"><span class="step-n">1</span><span class="step-label" id="pieceLabel">Add the necklace</span></div>
+        <div class="step-head"><span class="step-n">1</span><span class="step-label" id="pieceLabel">Add the piece</span></div>
         <div class="drop" id="dropPiece" tabindex="0" role="button" aria-label="Add the piece">
           <img class="thumb" id="thumbPiece" alt="">
           <span class="cue" id="pieceCue">Drop, click or paste a product shot on a plain background</span>
@@ -204,28 +193,20 @@ input[type="range"] { flex: 1; accent-color: var(--violet); }
         <div class="step-head"><span class="step-n">2</span><span class="step-label" id="photoLabel">Add your photo</span></div>
         <div class="drop" id="dropPhoto" tabindex="0" role="button" aria-label="Add your photo">
           <img class="thumb" id="thumbPhoto" alt="">
-          <span class="cue" id="photoCue">Drop, click or paste a head-and-shoulders photo</span>
+          <span class="cue" id="photoCue">Drop, click or paste a photo of the person</span>
         </div>
         <button class="clear" data-clear="photo" aria-label="Remove your photo">✕</button>
       </li>
     </ol>
 
-    <div class="tune" id="tune" hidden>
-      <div class="tune-row"><label for="size">Size</label><input type="range" id="size" min="40" max="200" value="100"></div>
-      <div class="tune-row"><label for="turn">Turn</label><input type="range" id="turn" min="-30" max="30" value="0"></div>
-      <label class="toggle"><input type="checkbox" id="occlude" checked> Tuck behind hair</label>
-      <p class="note">Drag the photo to nudge the piece.</p>
-    </div>
-
     <button class="act" id="place" disabled>Add both images to start</button>
-    <p class="note" id="hint">The whole photo goes to the model and comes back with the piece worn — same approach as the clothing tool.</p>
+    <p class="note">Takes about a minute.</p>
   </aside>
 
   <section class="stage">
     <div class="stage-bar">
       <span class="status" id="status">Ready</span>
       <div class="stage-actions">
-        <button class="ghost" id="reset" hidden>Re-detect</button>
         <a class="ghost" id="open" hidden target="_blank" rel="noopener">Open image ↗</a>
       </div>
     </div>
@@ -235,49 +216,15 @@ input[type="range"] { flex: 1; accent-color: var(--violet); }
 
 <script type="module">
 const $ = (id) => document.getElementById(id)
-const MP_VERSION = '1.0.1'
-const MP_BASE = `https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}`
-const MODELS = {
-  face: 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-  pose: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-  hand: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-  seg: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_multiclass_256x256/float32/latest/selfie_multiclass_256x256.tflite',
-}
-const HAIR = 1 // selfie_multiclass: 0 background, 1 hair, 2 body-skin, 3 face-skin, 4 clothes, 5 others
-
-// Face-mesh indices used for measurement, not decoration.
-const CHIN = 152
-const JAW_L = 234
-const JAW_R = 454
-// Pose landmarks.
-const SHOULDER_L = 11
-const SHOULDER_R = 12
-// Hand landmarks: ring finger knuckle and first joint.
-const RING_MCP = 13
-const RING_PIP = 14
-// Wrist and the knuckle line, which together give the forearm axis and a width
-// to scale a bracelet against.
-const WRIST = 0
-const INDEX_MCP = 5
-const MIDDLE_MCP = 9
-const PINKY_MCP = 17
 
 const COPY = {
-  necklace: { label: 'Add the necklace', cue: 'Drop, click or paste a product shot on a plain background', photo: 'Add your photo', photoCue: 'Drop, click or paste a head-and-shoulders photo' },
-  earrings: { label: 'Add the earring', cue: 'One earring is enough — it is mirrored for the pair', photo: 'Add your photo', photoCue: 'A face-on photo works best' },
-  ring: { label: 'Add the ring', cue: 'Drop, click or paste a product shot on a plain background', photo: 'Add a photo of your hand', photoCue: 'Palm down, fingers apart' },
-  bracelet: { label: 'Add the bracelet', cue: 'Drop, click or paste a product shot on a plain background', photo: 'Add a photo of your wrist', photoCue: 'Hand and wrist in frame, arm roughly straight' },
+  necklace: { label: 'Add the necklace', photo: 'Add your photo', photoCue: 'Head and shoulders, collar visible' },
+  earrings: { label: 'Add the earring', photo: 'Add your photo', photoCue: 'A face-on photo works best' },
+  ring: { label: 'Add the ring', photo: 'Add a photo of your hand', photoCue: 'Palm down, fingers apart' },
+  bracelet: { label: 'Add the bracelet', photo: 'Add a photo of your wrist', photoCue: 'Hand and wrist in frame' },
 }
 
-const state = {
-  kind: 'necklace', render: 'worn',
-  photo: null, pieceRaw: null, piece: null, pieceFlat: null,
-  photoImg: null, pieceImg: null,
-  anchors: null,           // measured from the photo
-  scale: 1, turn: 0, nudge: { x: 0, y: 0 },
-  hair: null,              // occlusion layer
-  result: null,
-}
+const state = { kind: 'necklace', photo: null, photoImg: null, piece: null, pieceFlat: null, result: null }
 
 /* ---------- image plumbing ---------- */
 const loadImage = (src) => new Promise((resolve, reject) => {
@@ -304,9 +251,10 @@ const shrink = async (file) => {
   return c.toDataURL('image/jpeg', 0.92)
 }
 
-/* ---------- step 2 of the pipeline: cut the product out ---------- */
+/* ---------- strip the backdrop off the product ---------- */
 // Learn the backdrop's palette from the border, flood inwards through matching
-// pixels only, knock them out, then crop to what is left.
+// pixels only, then sweep up pockets the flood could not reach — the hole inside
+// a necklace loop is backdrop too, and left opaque it lands on the wearer.
 const cutout = async (src) => {
   const img = await loadImage(src)
   const w = img.naturalWidth
@@ -344,10 +292,6 @@ const cutout = async (src) => {
     if (y < h - 1) seed(i + w)
   }
 
-  // Second pass: backdrop enclosed by the piece — the hole inside a necklace —
-  // is never reachable from the border, so it survives the flood as an opaque
-  // blob. Sweep up any sizeable pocket of backdrop colour left behind, while
-  // leaving small ones alone since those are specular highlights on metal.
   const MIN_HOLE = Math.max(64, Math.round(w * h * 0.002))
   const seen = new Uint8Array(w * h)
   for (let start = 0; start < isBg.length; start++) {
@@ -378,8 +322,9 @@ const cutout = async (src) => {
     if (y > maxY) maxY = y
   }
   const share = removed / (w * h)
+  const kept = w * h - removed
   const wide = maxX - minX > w * 0.02 && maxY - minY > h * 0.02
-  if (share < 0.15 || share > 0.9995 || !wide || maxX < 0) return null
+  if (share < 0.15 || share > 0.9995 || kept < 200 || !wide || maxX < 0) return null
 
   const m = Math.round(Math.max(maxX - minX, maxY - minY) * 0.03)
   const sx = Math.max(0, minX - m), sy = Math.max(0, minY - m)
@@ -389,174 +334,33 @@ const cutout = async (src) => {
   // Flat on white for the model, which renders alpha as black.
   ctx.putImageData(image, 0, 0)
   const flat = canvasOf(sw, sh)
-  const fx = flat.getContext('2d')
-  fx.fillStyle = '#fff'
-  fx.fillRect(0, 0, sw, sh)
-  fx.drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh)
+  const f = flat.getContext('2d')
+  f.fillStyle = '#fff'
+  f.fillRect(0, 0, sw, sh)
+  f.drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh)
 
-  // Knocked out for the instant overlay.
+  // Knocked out, purely so the thumbnail shows what was stripped.
   for (let i = 0; i < isBg.length; i++) if (isBg[i]) px[i * 4 + 3] = 0
   ctx.putImageData(image, 0, 0)
-  const out = canvasOf(sw, sh)
-  out.getContext('2d').drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh)
+  const cut = canvasOf(sw, sh)
+  cut.getContext('2d').drawImage(c, sx, sy, sw, sh, 0, 0, sw, sh)
 
-  return { cut: out.toDataURL('image/png'), flat: flat.toDataURL('image/jpeg', 0.95) }
+  return { flat: flat.toDataURL('image/jpeg', 0.95), cut: cut.toDataURL('image/png') }
 }
 
-/* ---------- step 1: landmarks ---------- */
-let mp = null
-let visionFileset = null
-const tasks = {}
-
-const getVision = async () => {
-  if (!visionFileset) {
-    mp = await import(`${MP_BASE}/vision_bundle.mjs`)
-    visionFileset = await mp.FilesetResolver.forVisionTasks(`${MP_BASE}/wasm`)
-  }
-  return visionFileset
+// Ask for ~3.1 megapixels at the photo's own aspect ratio. Left to itself the
+// API renders around 1024px, where a chain link has too few pixels to exist.
+const renderSize = (img) => {
+  const ratio = img.naturalWidth / img.naturalHeight
+  const snap = (v) => Math.max(256, Math.min(3840, Math.round(v / 16) * 16))
+  return `${snap(Math.sqrt(3.1e6 * ratio))}x${snap(Math.sqrt(3.1e6 / ratio))}`
 }
 
-// GPU is much faster but is not available everywhere; fall back rather than fail.
-const build = async (name, Ctor, options) => {
-  if (tasks[name]) return tasks[name]
-  const vision = await getVision()
-  const make = (delegate) => Ctor.createFromOptions(vision, {
-    ...options,
-    baseOptions: { ...options.baseOptions, delegate },
-  })
-  tasks[name] = await make('GPU').catch(() => make('CPU'))
-  return tasks[name]
-}
+/* ---------- status ---------- */
+const fail = (message) => { $('status').className = 'status bad'; $('status').textContent = message }
+const say = (html) => { $('status').className = 'status'; $('status').innerHTML = html }
+const clearFail = () => { if ($('status').className.includes('bad')) say('Ready') }
 
-const faceTask = () => build('face', mp.FaceLandmarker, { baseOptions: { modelAssetPath: MODELS.face }, runningMode: 'IMAGE', numFaces: 1 })
-const poseTask = () => build('pose', mp.PoseLandmarker, { baseOptions: { modelAssetPath: MODELS.pose }, runningMode: 'IMAGE', numPoses: 1 })
-const handTask = () => build('hand', mp.HandLandmarker, { baseOptions: { modelAssetPath: MODELS.hand }, runningMode: 'IMAGE', numHands: 2 })
-const segTask = () => build('seg', mp.ImageSegmenter, { baseOptions: { modelAssetPath: MODELS.seg }, runningMode: 'IMAGE', outputCategoryMask: true, outputConfidenceMasks: false })
-
-/* ---------- step 3: derive placement from the landmarks ---------- */
-// Every number below comes from a measured distance on the body, never a guess.
-const measure = async (img) => {
-  const W = img.naturalWidth, H = img.naturalHeight
-  const at = (l) => ({ x: l.x * W, y: l.y * H })
-  const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
-  // Always measure the angle left-to-right across the image. MediaPipe numbers
-  // limbs from the subject's point of view, so landmark 11 (their left
-  // shoulder) sits on the right of the picture — taking the pair in index order
-  // yields an angle near 180° and hangs the piece upside down.
-  const axis = (p, q) => {
-    const [a, b] = p.x <= q.x ? [p, q] : [q, p]
-    return { left: a, right: b, angle: Math.atan2(b.y - a.y, b.x - a.x), span: dist(a, b) }
-  }
-
-  if (state.kind === 'ring' || state.kind === 'bracelet') {
-    await getVision()
-    const hands = (await handTask()).detect(img)
-    const hand = hands.landmarks?.[0]
-    if (!hand) throw new Error('No hand found. Use a photo with the hand and wrist clearly visible.')
-
-    if (state.kind === 'bracelet') {
-      const wrist = at(hand[WRIST])
-      const knuckle = at(hand[MIDDLE_MCP])
-      // Palm width across the knuckles is the closest proxy for wrist width
-      // that the hand model gives us; a wrist runs a little narrower.
-      const palmWidth = dist(at(hand[INDEX_MCP]), at(hand[PINKY_MCP]))
-      const palmLength = dist(wrist, knuckle)
-      // Point down the forearm, away from the fingers, and sit just past the wrist.
-      const down = Math.atan2(wrist.y - knuckle.y, wrist.x - knuckle.x)
-      return [{
-        cx: wrist.x + Math.cos(down) * palmLength * 0.22,
-        cy: wrist.y + Math.sin(down) * palmLength * 0.22,
-        width: palmWidth * 1.05,
-        angle: down + Math.PI / 2,     // the band crosses the arm, not along it
-      }]
-    }
-
-    const mcp = at(hand[RING_MCP])
-    const pip = at(hand[RING_PIP])
-    const along = Math.atan2(pip.y - mcp.y, pip.x - mcp.x)
-    const fingerLen = dist(mcp, pip)
-    return [{
-      cx: (mcp.x + pip.x) / 2,
-      cy: (mcp.y + pip.y) / 2,
-      width: fingerLen * 0.95,          // ring spans a little wider than the finger
-      angle: along + Math.PI / 2,        // the band crosses the finger, not along it
-    }]
-  }
-
-  await getVision()
-  const face = (await faceTask()).detect(img)
-  const marks = face.faceLandmarks?.[0]
-  if (!marks) throw new Error('No face found. Use a photo where the face is visible.')
-  const chin = at(marks[CHIN])
-  const jaw = axis(at(marks[JAW_L]), at(marks[JAW_R]))
-  const faceWidth = jaw.span
-  const jawAngle = jaw.angle
-
-  if (state.kind === 'earrings') {
-    const drop = faceWidth * 0.06
-    return [jaw.left, jaw.right].map((ear, i) => ({
-      cx: ear.x + (i === 0 ? -1 : 1) * faceWidth * 0.01,
-      cy: ear.y + drop,
-      width: faceWidth * 0.17,
-      angle: jawAngle,
-      anchorTop: true,                   // earrings hang from the lobe
-      mirror: i === 1,
-    }))
-  }
-
-  // Necklace: shoulders give both the width and the tilt when they are visible.
-  const pose = (await poseTask()).detect(img)
-  const body = pose.landmarks?.[0]
-  if (body && body[SHOULDER_L] && body[SHOULDER_R]) {
-    const shoulders = axis(at(body[SHOULDER_L]), at(body[SHOULDER_R]))
-    const midX = (shoulders.left.x + shoulders.right.x) / 2
-    const midY = (shoulders.left.y + shoulders.right.y) / 2
-    return [{
-      cx: midX,
-      cy: chin.y + (midY - chin.y) * 0.55,
-      width: shoulders.span * 0.62,
-      angle: shoulders.angle,
-      anchorTop: true,
-      chinY: chin.y,
-    }]
-  }
-  // Face-only fallback: the jaw is the only ruler available.
-  return [{
-    cx: chin.x,
-    cy: chin.y + faceWidth * 0.28,
-    width: faceWidth * 1.45,
-    angle: jawAngle,
-    anchorTop: true,
-    chinY: chin.y,
-  }]
-}
-
-/* ---------- step 4: occlusion ---------- */
-const hairLayer = async (img) => {
-  const seg = (await segTask()).segment(img)
-  const mask = seg.categoryMask
-  if (!mask) return null
-  const mw = mask.width, mh = mask.height
-  const values = mask.getAsUint8Array()
-  const maskCanvas = canvasOf(mw, mh)
-  const mctx = maskCanvas.getContext('2d')
-  const id = mctx.createImageData(mw, mh)
-  for (let i = 0; i < values.length; i++) id.data[i * 4 + 3] = values[i] === HAIR ? 255 : 0
-  mctx.putImageData(id, 0, 0)
-  mask.close()
-
-  const W = img.naturalWidth, H = img.naturalHeight
-  const layer = canvasOf(W, H)
-  const lctx = layer.getContext('2d')
-  lctx.drawImage(img, 0, 0)
-  lctx.globalCompositeOperation = 'destination-in'
-  lctx.imageSmoothingQuality = 'high'
-  lctx.drawImage(maskCanvas, 0, 0, W, H)
-  return layer
-}
-
-// Brave and Chrome refuse to navigate to a data: URL, and every result is one,
-// so the link gets a blob instead. The previous one is revoked to avoid a leak.
 let openUrl = null
 const linkResult = (src) => {
   $('open').hidden = false
@@ -567,90 +371,101 @@ const linkResult = (src) => {
   }).catch(() => { $('open').href = src })
 }
 
-/* ---------- render ---------- */
-const render = () => {
-  if (!state.photoImg || !state.anchors) return
-  const W = state.photoImg.naturalWidth, H = state.photoImg.naturalHeight
-  const c = canvasOf(W, H)
-  const ctx = c.getContext('2d')
-  ctx.drawImage(state.photoImg, 0, 0)
-
-  const piece = state.pieceImg
-  const ratio = piece.naturalHeight / piece.naturalWidth
-  for (const a of state.anchors) {
-    const w = a.width * state.scale
-    const h = w * ratio
-    ctx.save()
-    ctx.translate(a.cx + state.nudge.x, a.cy + state.nudge.y)
-    ctx.rotate(a.angle + (state.turn * Math.PI) / 180)
-    if (a.mirror) ctx.scale(-1, 1)
-    ctx.shadowColor = 'rgba(0,0,0,.35)'
-    ctx.shadowBlur = Math.max(2, h * 0.03)
-    ctx.shadowOffsetY = Math.max(1, h * 0.012)
-    // Necklaces and earrings hang downward from their anchor; a ring is centred.
-    ctx.drawImage(piece, -w / 2, a.anchorTop ? 0 : -h / 2, w, h)
-    ctx.restore()
-  }
-
-  if (state.hair && $('occlude').checked) ctx.drawImage(state.hair, 0, 0)
-
-  state.result = c.toDataURL('image/png')
-  const out = $('out') || Object.assign(document.createElement('img'), { id: 'out' })
-  out.src = state.result
-  if (!out.parentElement) $('canvas').replaceChildren(out)
-  linkResult(state.result)
-  $('reset').hidden = false
-  $('tune').hidden = false
+function emptyState() {
+  const el = document.createElement('div')
+  el.className = 'empty'
+  el.innerHTML = `<div class="empty-seam"></div><h2>Try the piece on.</h2>
+    <p>Add a product shot and a photo of the person. The kind of piece is worked out for you.</p>`
+  return el
 }
 
-// Ask for roughly 3.1 megapixels at the photo's own aspect ratio. Letting the
-// API choose gives ~1024px, where a chain link is about five pixels across and
-// cannot be drawn — this puts ~25 pixels on each link instead. Edges must be
-// multiples of 16, no edge over 3840, and the total must stay under 8.3MP.
-const renderSize = (img) => {
-  const ratio = img.naturalWidth / img.naturalHeight
-  const snap = (v) => Math.max(256, Math.min(3840, Math.round(v / 16) * 16))
-  const w = snap(Math.sqrt(3.1e6 * ratio))
-  const h = snap(Math.sqrt(3.1e6 / ratio))
-  return `${w}x${h}`
+const working = (label, pct) => {
+  let box = $('canvas').querySelector('.working')
+  if (!box) {
+    box = document.createElement('div')
+    box.className = 'working'
+    box.innerHTML = `<div class="prog"><div class="track"><div class="fill"></div></div>
+      <div class="meta"><span class="phase"></span><span class="pc"></span></div></div>`
+    $('canvas').replaceChildren(box)
+  }
+  box.querySelector('.fill').style.width = `${pct}%`
+  box.querySelector('.phase').textContent = label
+  box.querySelector('.pc').textContent = `${pct}%`
+}
+
+/* ---------- the kind of piece ---------- */
+const setKind = (kind, automatic) => {
+  state.kind = kind
+  document.querySelectorAll('[data-kind]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.kind === kind)))
+  const copy = COPY[kind]
+  $('pieceLabel').textContent = copy.label
+  $('photoLabel').textContent = copy.photo
+  $('photoCue').textContent = copy.photoCue
+  $('kindDot').className = 'dot ok'
+  $('kindText').textContent = kind
+  $('kindsNote').textContent = automatic
+    ? `Read from your product photo. Change it if that is wrong.`
+    : `Set by you.`
+}
+
+document.querySelectorAll('[data-kind]').forEach((btn) =>
+  btn.addEventListener('click', () => setKind(btn.dataset.kind, false)))
+
+const identify = async (image) => {
+  $('kindDot').className = 'dot'
+  $('kindText').textContent = 'reading piece'
+  try {
+    const res = await fetch('/api/identify', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ image }),
+    })
+    const data = await res.json()
+    if (data.kind) return setKind(data.kind, true)
+  } catch { /* fall through to whatever is already selected */ }
+  $('kindDot').className = 'dot ok'
+  $('kindText').textContent = state.kind
+  $('kindsNote').textContent = 'Could not read the piece — pick the kind yourself.'
 }
 
 /* ---------- intake ---------- */
 const setPiece = async (value) => {
-  state.pieceRaw = value
   state.result = null
   $('dropPiece').classList.toggle('filled', Boolean(value))
   $('stepPiece').classList.toggle('done', Boolean(value))
-  if (!value) { state.piece = null; state.pieceFlat = null; state.pieceImg = null; $('thumbPiece').src = ''; return sync() }
+  if (!value) {
+    state.piece = state.pieceFlat = null
+    $('thumbPiece').src = ''
+    $('kindDot').className = 'dot'
+    $('kindText').textContent = 'no piece yet'
+    return sync()
+  }
   const cut = await cutout(value)
   if (!cut) {
-    state.piece = null
-    state.pieceFlat = null
+    state.piece = state.pieceFlat = null
     $('thumbPiece').src = value
     fail('Could not separate that piece from its backdrop. Use a product shot on a plain background.')
     return sync()
   }
   state.piece = cut.cut
   state.pieceFlat = cut.flat
-  state.pieceImg = await loadImage(cut.cut)
   $('thumbPiece').src = cut.cut
   clearFail()
   sync()
+  identify(cut.flat)
 }
 
 const setPhoto = async (value) => {
+  state.result = null
   state.photo = value
   $('dropPhoto').classList.toggle('filled', Boolean(value))
   $('stepPhoto').classList.toggle('done', Boolean(value))
   $('thumbPhoto').src = value || ''
   state.photoImg = value ? await loadImage(value) : null
-  state.anchors = null
-  state.hair = null
-  state.result = null
   sync()
 }
 
-for (const [which, dropId, set] of [['piece', 'dropPiece', setPiece], ['photo', 'dropPhoto', setPhoto]]) {
+for (const [dropId, set] of [['dropPiece', setPiece], ['dropPhoto', setPhoto]]) {
   const drop = $(dropId)
   const pick = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*' })
   const take = async (file) => {
@@ -668,186 +483,62 @@ document.querySelectorAll('[data-clear]').forEach((b) =>
   b.addEventListener('click', () => (b.dataset.clear === 'piece' ? setPiece(null) : setPhoto(null))))
 
 window.addEventListener('paste', (e) => {
-  const target = state.pieceRaw ? (state.photo ? null : setPhoto) : setPiece
+  const target = state.pieceFlat ? (state.photo ? null : setPhoto) : setPiece
   if (!target) return
   const file = [...e.clipboardData.files][0]
   if (file) shrink(file).then(target).catch((err) => fail(err.message))
 })
 
-document.querySelectorAll('[data-render]').forEach((btn) =>
-  btn.addEventListener('click', () => {
-    state.render = btn.dataset.render
-    document.querySelectorAll('[data-render]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)))
-    $('hint').textContent = state.render === 'worn'
-      ? 'The whole photo goes to the model and comes back with the piece worn — same approach as the clothing tool.'
-      : 'The piece is placed on your photo untouched. Instant, but it sits flat.'
-  }))
-
-document.querySelectorAll('[data-kind]').forEach((btn) =>
-  btn.addEventListener('click', async () => {
-    state.kind = btn.dataset.kind
-    document.querySelectorAll('[data-kind]').forEach((b) => b.setAttribute('aria-pressed', String(b === btn)))
-    const copy = COPY[state.kind]
-    $('pieceLabel').textContent = copy.label
-    $('pieceCue').textContent = copy.cue
-    $('photoLabel').textContent = copy.photo
-    $('photoCue').textContent = copy.photoCue
-    state.anchors = null
-    sync()
-  }))
-
-/* ---------- status ---------- */
-const fail = (message) => { $('status').className = 'status bad'; $('status').textContent = message }
-const clearFail = () => { $('status').className = 'status'; $('status').textContent = 'Ready' }
-const say = (message) => { $('status').className = 'status'; $('status').innerHTML = message }
-
-const sync = () => {
-  const ready = Boolean(state.photo && state.piece)
-  const done = Boolean(state.anchors || state.result)
-  $('place').disabled = !ready
-  $('place').textContent = ready ? (done ? 'Try again' : 'Place the piece') : 'Add both images to start'
-  // Only clear the stage when there is nothing to show. Worn mode sets a result
-  // without ever setting anchors, and this used to wipe the render it had just
-  // paid 60 seconds for.
-  if (!done) {
-    $('tune').hidden = true
-    $('reset').hidden = true
-    if (!$('canvas').querySelector('.empty')) $('canvas').replaceChildren(emptyState())
-  }
-}
-
-function emptyState() {
-  const el = document.createElement('div')
-  el.className = 'empty'
-  el.innerHTML = `<div class="empty-seam"></div>
-    <h2>Try the piece on.</h2>
-    <p>Add the piece and a photo, then press Place. Worn renders it on the body; Instant places it on the photo untouched.</p>`
-  return el
-}
-
-const working = (label, pct) => {
-  let box = $('canvas').querySelector('.working')
-  if (!box) {
-    box = document.createElement('div')
-    box.className = 'working'
-    box.innerHTML = `<div class="prog"><div class="track"><div class="fill"></div></div>
-      <div class="meta"><span class="phase"></span><span class="time"></span></div></div>`
-    $('canvas').replaceChildren(box)
-  }
-  box.querySelector('.fill').style.width = `${pct}%`
-  box.querySelector('.phase').textContent = label
-  box.querySelector('.time').textContent = `${pct}%`
-}
-
 /* ---------- run ---------- */
+const sync = () => {
+  const ready = Boolean(state.photo && state.pieceFlat)
+  $('place').disabled = !ready
+  $('place').textContent = ready ? (state.result ? 'Try again' : 'Try it on') : 'Add both images to start'
+  if (!state.result && !$('canvas').querySelector('.empty')) $('canvas').replaceChildren(emptyState())
+}
+
 $('place').addEventListener('click', async () => {
   const t = Date.now()
   $('place').disabled = true
   clearFail()
+  // One long blocking call with nothing to report, so the bar eases on elapsed
+  // time rather than sitting at a number that looks like a hang.
+  const tick = setInterval(() => {
+    working('putting it on', Math.round(100 * (1 - Math.exp(-((Date.now() - t) / 1000) / 22))))
+  }, 250)
   try {
-    // Worn: the whole photo goes to the model and the whole photo comes back,
-    // exactly as the clothing tool works. Cropping to a strip and stitching it
-    // in was the thing making these look pasted — the model reproduces the
-    // scene faithfully when it can see all of it.
-    if (state.render === 'worn') {
-      // The wait is one long blocking call with no progress to report, so the
-      // bar eases on elapsed time rather than freezing at a number.
-      const tick = setInterval(() => {
-        const secs = (Date.now() - t) / 1000
-        working('rendering it worn', Math.round(100 * (1 - Math.exp(-secs / 22))))
-      }, 250)
-      try {
-      const res = await fetch('/api/run', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'jewellery',
-          size: renderSize(state.photoImg),
-          inputs: { model_image: state.photo, garment_image: state.pieceFlat },
-        }),
-      })
-      const data = await res.json().catch(() => ({ message: `HTTP ${res.status}` }))
-      if (!res.ok || (typeof data.error === 'string' && data.error)) {
-        throw new Error(data.message || data.error || `HTTP ${res.status}`)
-      }
-      const painted = (data.output || [])[0]
-      if (!painted) throw new Error('The service returned no image.')
-      state.result = painted
-      const out = $('out') || Object.assign(document.createElement('img'), { id: 'out' })
-      out.src = state.result
-      if (!out.parentElement) $('canvas').replaceChildren(out)
-      linkResult(state.result)
-      $('reset').hidden = false
-      $('tune').hidden = true
-      say(`<b>worn</b> · ${((Date.now() - t) / 1000).toFixed(1)}s`)
-      return
-      } finally {
-        clearInterval(tick)
-      }
+    working('putting it on', 2)
+    const res = await fetch('/api/run', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        mode: 'jewellery',
+        kind: state.kind,
+        size: renderSize(state.photoImg),
+        inputs: { model_image: state.photo, garment_image: state.pieceFlat },
+      }),
+    })
+    const data = await res.json().catch(() => ({ message: `HTTP ${res.status}` }))
+    if (!res.ok || (typeof data.error === 'string' && data.error)) {
+      throw new Error(data.message || data.error || `HTTP ${res.status}`)
     }
+    const painted = (data.output || [])[0]
+    if (!painted) throw new Error('The service returned no image.')
 
-    working('loading engine', 20)
-    await getVision()
-    working('finding landmarks', 45)
-    state.anchors = await measure(state.photoImg)
-    state.scale = 1
-    state.turn = 0
-    state.nudge = { x: 0, y: 0 }
-    $('size').value = 100
-    $('turn').value = 0
-
-    if (!['ring', 'bracelet'].includes(state.kind) && $('occlude').checked) {
-      working('separating hair', 75)
-      state.hair = await hairLayer(state.photoImg).catch(() => null)
-    } else {
-      state.hair = null
-    }
-    working('placing', 95)
-    render()
-    say(`<b>placed</b> · ${((Date.now() - t) / 1000).toFixed(1)}s · on-device`)
-    $('engineDot').className = 'dot ok'
-    $('engineText').textContent = 'on-device'
+    state.result = painted
+    const out = $('out') || Object.assign(document.createElement('img'), { id: 'out', alt: 'Try-on result' })
+    out.src = painted
+    $('canvas').replaceChildren(out)
+    linkResult(painted)
+    say(`<b>done</b> · ${((Date.now() - t) / 1000).toFixed(1)}s · ${state.kind}`)
   } catch (e) {
-    fail(e.message)
     $('canvas').replaceChildren(emptyState())
+    fail(e.message)
   } finally {
-    sync()
-    $('place').disabled = !(state.photo && state.piece)
+    clearInterval(tick)
+    $('place').disabled = !(state.photo && state.pieceFlat)
+    $('place').textContent = state.result ? 'Try again' : 'Try it on'
   }
-})
-
-$('reset').addEventListener('click', () => $('place').click())
-$('size').addEventListener('input', (e) => { state.scale = Number(e.target.value) / 100; render() })
-$('turn').addEventListener('input', (e) => { state.turn = Number(e.target.value); render() })
-$('occlude').addEventListener('change', async () => {
-  if ($('occlude').checked && !state.hair && !['ring', 'bracelet'].includes(state.kind) && state.photoImg) {
-    working('separating hair', 60)
-    state.hair = await hairLayer(state.photoImg).catch(() => null)
-  }
-  render()
-})
-
-// Drag the picture to nudge the piece — auto placement gets you close, not perfect.
-$('canvas').addEventListener('pointerdown', (e) => {
-  const out = $('out')
-  if (!out || !state.anchors) return
-  out.setPointerCapture(e.pointerId)
-  out.classList.add('dragging')
-  const rect = out.getBoundingClientRect()
-  const scale = state.photoImg.naturalWidth / rect.width
-  const from = { x: e.clientX, y: e.clientY, nx: state.nudge.x, ny: state.nudge.y }
-  const move = (ev) => {
-    if (ev.buttons === 0) return up()
-    state.nudge = { x: from.nx + (ev.clientX - from.x) * scale, y: from.ny + (ev.clientY - from.y) * scale }
-    render()
-  }
-  const up = () => {
-    out.classList.remove('dragging')
-    out.removeEventListener('pointermove', move)
-    out.removeEventListener('pointerup', up)
-  }
-  out.addEventListener('pointermove', move)
-  out.addEventListener('pointerup', up)
 })
 
 $('canvas').replaceChildren(emptyState())

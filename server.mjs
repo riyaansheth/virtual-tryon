@@ -14,6 +14,8 @@ const OPENAI_SIZE = process.env.OPENAI_IMAGE_SIZE
 // Jewellery renders at high quality; the size is computed per photo by the
 // client so framing survives. Clothing is deliberately not affected by these.
 const JEWEL_QUALITY = process.env.JEWEL_IMAGE_QUALITY || 'high'
+// Small, fast and vision-capable — this only has to read one word.
+const IDENTIFY_MODEL = process.env.IDENTIFY_MODEL || 'gpt-4.1-mini'
 const FASHN_MODEL = process.env.FASHN_MODEL || 'tryon-v1.6'
 const FASHN_MODE = process.env.FASHN_MODE || 'quality'
 const FASHN_RESOLUTION = process.env.FASHN_RESOLUTION || '2k'
@@ -104,21 +106,26 @@ const PROMPTS = {
     "Reproduce the garment's colour, pattern, print, texture, neckline and cut faithfully.",
     'Photorealistic result, with lighting and shadows consistent with the original photo.',
   ].join(' '),
-  // Jewellery is added, not swapped, and the usual failure is scale — models
-  // render a necklace the size of a dinner plate unless told otherwise.
-  jewellery: [
-    'Add the jewellery shown in the second image onto the person in the first image.',
-    'The second image is a product shot on a plain backdrop — that backdrop is not',
-    'clothing and must be ignored entirely. Do not change what the person is wearing.',
-    "Keep the person's face, hair, skin tone, pose, clothing and the background exactly as they are.",
-    'Add only the jewellery, worn where that kind of piece is naturally worn:',
-    'necklaces and pendants at the collarbone, earrings on the earlobes, rings on fingers,',
-    'bracelets and watches on the wrist, bangles on the forearm.',
-    'Keep it at realistic scale relative to the body — jewellery is small.',
-    "Reproduce the piece's metal colour, gemstones, shape and detailing faithfully.",
-    'Photorealistic, with metal reflections and shadows consistent with the original lighting.',
-  ].join(' '),
 }
+
+// Naming the exact piece beats listing every possibility, so the instruction is
+// built per kind rather than reciting where each type of jewellery goes.
+const WEAR = {
+  necklace: 'Put the necklace from the second image on the person, sitting naturally at the collarbone and following the neckline.',
+  earrings: 'Put the earrings from the second image on the person, one on each earlobe, matching the pair shown.',
+  ring: "Put the ring from the second image on the person's ring finger, sized correctly to the finger.",
+  bracelet: "Put the bracelet from the second image on the person's wrist, sitting just past the wrist bone.",
+}
+
+const jewelleryPrompt = (kind) => [
+  WEAR[kind] || WEAR.necklace,
+  'The second image is a product shot on a plain backdrop — ignore that backdrop entirely, it is not clothing.',
+  "Keep the person's face, hair, skin tone, pose, clothing and the background exactly as they are.",
+  'Change nothing except adding the piece.',
+  "Reproduce the piece as faithfully as you can: its metal colours, the number of strands, the link shape, the clasps and every detail.",
+  'Keep it at realistic scale relative to the body.',
+  'Photorealistic, with metal reflections and shadows consistent with the original lighting.',
+].join(' ')
 
 const toBlob = async (src) => {
   if (src.startsWith('data:')) {
@@ -175,10 +182,41 @@ const fashnRun = async (inputs, mode, res) => {
   send(res, upstream.status, await upstream.text())
 }
 
+// Which kind of piece is in a product photo. Ring and bracelet are both loops,
+// so shape alone cannot tell them apart — a vision model can, in about 2s.
+const KINDS = ['necklace', 'earrings', 'ring', 'bracelet']
+
+const identify = async (image, res) => {
+  if (!image) return err(res, 400, 'MissingImage', 'No product image to identify.')
+  const upstream = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${OPENAI_KEY}`, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      model: IDENTIFY_MODEL,
+      max_tokens: 5,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: `What kind of jewellery is this product photo? Answer with exactly one word: ${KINDS.join(', ')}.` },
+          { type: 'image_url', image_url: { url: image, detail: 'low' } },
+        ],
+      }],
+    }),
+    signal: AbortSignal.timeout(30000),
+  }).catch((e) => { throw new Error(e.name === 'TimeoutError' ? 'Identifying the piece timed out.' : e.message) })
+
+  const data = await upstream.json().catch(() => ({}))
+  if (!upstream.ok) return err(res, upstream.status, 'IdentifyError', data.error?.message || `HTTP ${upstream.status}`)
+  const said = (data.choices?.[0]?.message?.content || '').toLowerCase()
+  // Never trust it blindly: fall back rather than pass a junk kind downstream.
+  const kind = KINDS.find((k) => said.includes(k)) || null
+  send(res, 200, JSON.stringify({ kind }))
+}
+
 const openaiRun = async (inputs, mode, res, opts = {}) => {
   const form = new FormData()
   form.append('model', OPENAI_MODEL)
-  form.append('prompt', PROMPTS[mode] || PROMPTS.clothing)
+  form.append('prompt', mode === 'jewellery' ? jewelleryPrompt(opts.kind) : PROMPTS.clothing)
   if (mode === 'jewellery') {
     // A chain's identity lives in detail a few pixels wide. At the ~1024px the
     // API picks by default there is no room to draw a link, so it renders
@@ -261,13 +299,19 @@ export const handler = async (req, res) => {
     return err(res, 503, 'NoApiKey', 'Add OPENAI_API_KEY (or FASHN_API_KEY) to .env and restart the server.')
   }
 
+  if (pathname === '/api/identify') {
+    if (PROVIDER !== 'openai') return err(res, 400, 'Unsupported', 'Identifying a piece needs the OpenAI provider.')
+    const { image } = JSON.parse(await readBody(req, res))
+    return identify(image, res)
+  }
+
   // The client sends only the two images; provider-specific payloads are built here.
   if (pathname === '/api/run') {
-    const { inputs = {}, mode = 'clothing', size } = JSON.parse(await readBody(req, res))
+    const { inputs = {}, mode = 'clothing', size, kind } = JSON.parse(await readBody(req, res))
     if (!inputs.model_image || !inputs.garment_image) {
       return err(res, 400, 'MissingImage', 'Both photos are required.')
     }
-    return PROVIDER === 'openai' ? openaiRun(inputs, mode, res, { size }) : fashnRun(inputs, mode, res)
+    return PROVIDER === 'openai' ? openaiRun(inputs, mode, res, { size, kind }) : fashnRun(inputs, mode, res)
   }
 
   if (PROVIDER === 'openai') {

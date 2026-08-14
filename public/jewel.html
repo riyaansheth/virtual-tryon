@@ -73,10 +73,10 @@ button, input { font: inherit; color: inherit; }
 }
 .stage { padding: 24px 28px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; }
 
-.kinds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+.kinds { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
 .kinds button {
-  padding: 9px 6px; border: 0; border-radius: 8px; background: transparent;
-  color: var(--muted); font: 500 12px/1 var(--body); cursor: pointer; transition: background .18s, color .18s;
+  padding: 9px 4px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--muted); font: 500 11px/1 var(--body); cursor: pointer; transition: background .18s, color .18s;
 }
 .kinds button:hover { color: var(--white); }
 .kinds button[aria-pressed="true"] { background: linear-gradient(160deg, var(--violet), var(--violet-deep)); color: var(--white); }
@@ -183,6 +183,7 @@ input[type="range"] { flex: 1; accent-color: var(--violet); }
       <button type="button" data-kind="necklace" aria-pressed="true">Necklace</button>
       <button type="button" data-kind="earrings" aria-pressed="false">Earrings</button>
       <button type="button" data-kind="ring" aria-pressed="false">Ring</button>
+      <button type="button" data-kind="bracelet" aria-pressed="false">Bracelet</button>
     </div>
 
     <div class="kinds" role="group" aria-label="How to render it" style="grid-template-columns: 1fr 1fr">
@@ -254,11 +255,18 @@ const SHOULDER_R = 12
 // Hand landmarks: ring finger knuckle and first joint.
 const RING_MCP = 13
 const RING_PIP = 14
+// Wrist and the knuckle line, which together give the forearm axis and a width
+// to scale a bracelet against.
+const WRIST = 0
+const INDEX_MCP = 5
+const MIDDLE_MCP = 9
+const PINKY_MCP = 17
 
 const COPY = {
   necklace: { label: 'Add the necklace', cue: 'Drop, click or paste a product shot on a plain background', photo: 'Add your photo', photoCue: 'Drop, click or paste a head-and-shoulders photo' },
   earrings: { label: 'Add the earring', cue: 'One earring is enough — it is mirrored for the pair', photo: 'Add your photo', photoCue: 'A face-on photo works best' },
   ring: { label: 'Add the ring', cue: 'Drop, click or paste a product shot on a plain background', photo: 'Add a photo of your hand', photoCue: 'Palm down, fingers apart' },
+  bracelet: { label: 'Add the bracelet', cue: 'Drop, click or paste a product shot on a plain background', photo: 'Add a photo of your wrist', photoCue: 'Hand and wrist in frame, arm roughly straight' },
 }
 
 const state = {
@@ -440,11 +448,29 @@ const measure = async (img) => {
     return { left: a, right: b, angle: Math.atan2(b.y - a.y, b.x - a.x), span: dist(a, b) }
   }
 
-  if (state.kind === 'ring') {
+  if (state.kind === 'ring' || state.kind === 'bracelet') {
     await getVision()
     const hands = (await handTask()).detect(img)
     const hand = hands.landmarks?.[0]
-    if (!hand) throw new Error('No hand found. Use a photo with the hand clearly visible, palm down.')
+    if (!hand) throw new Error('No hand found. Use a photo with the hand and wrist clearly visible.')
+
+    if (state.kind === 'bracelet') {
+      const wrist = at(hand[WRIST])
+      const knuckle = at(hand[MIDDLE_MCP])
+      // Palm width across the knuckles is the closest proxy for wrist width
+      // that the hand model gives us; a wrist runs a little narrower.
+      const palmWidth = dist(at(hand[INDEX_MCP]), at(hand[PINKY_MCP]))
+      const palmLength = dist(wrist, knuckle)
+      // Point down the forearm, away from the fingers, and sit just past the wrist.
+      const down = Math.atan2(wrist.y - knuckle.y, wrist.x - knuckle.x)
+      return [{
+        cx: wrist.x + Math.cos(down) * palmLength * 0.22,
+        cy: wrist.y + Math.sin(down) * palmLength * 0.22,
+        width: palmWidth * 1.05,
+        angle: down + Math.PI / 2,     // the band crosses the arm, not along it
+      }]
+    }
+
     const mcp = at(hand[RING_MCP])
     const pip = at(hand[RING_PIP])
     const along = Math.atan2(pip.y - mcp.y, pip.x - mcp.x)
@@ -770,7 +796,7 @@ $('place').addEventListener('click', async () => {
     $('size').value = 100
     $('turn').value = 0
 
-    if (state.kind !== 'ring' && $('occlude').checked) {
+    if (!['ring', 'bracelet'].includes(state.kind) && $('occlude').checked) {
       working('separating hair', 75)
       state.hair = await hairLayer(state.photoImg).catch(() => null)
     } else {
@@ -794,7 +820,7 @@ $('reset').addEventListener('click', () => $('place').click())
 $('size').addEventListener('input', (e) => { state.scale = Number(e.target.value) / 100; render() })
 $('turn').addEventListener('input', (e) => { state.turn = Number(e.target.value); render() })
 $('occlude').addEventListener('change', async () => {
-  if ($('occlude').checked && !state.hair && state.kind !== 'ring' && state.photoImg) {
+  if ($('occlude').checked && !state.hair && !['ring', 'bracelet'].includes(state.kind) && state.photoImg) {
     working('separating hair', 60)
     state.hair = await hairLayer(state.photoImg).catch(() => null)
   }

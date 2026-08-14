@@ -218,9 +218,13 @@ export const handler = async (req, res) => {
   // Two single-page apps: /jewel is the jewellery product, everything else is
   // the clothing console. Static routing only — neither generation path changes.
   if (!pathname.startsWith('/api/')) {
-    const page = pathname.startsWith('/jewel') ? 'jewel.html' : 'index.html'
-    const html = await readFile(new URL(`./public/${page}`, import.meta.url))
-    return send(res, 200, html, { 'content-type': 'text/html; charset=utf-8' })
+    const jewel = pathname.startsWith('/jewel')
+    const html = await readFile(new URL(`./public/${jewel ? 'jewel' : 'index'}.html`, import.meta.url))
+    return send(res, 200, html, {
+      'content-type': 'text/html; charset=utf-8',
+      // Jewels changes often and a stale copy looks exactly like a broken app.
+      ...(jewel ? { 'cache-control': 'no-store' } : {}),
+    })
   }
 
   // Lets the UI say "no key" without guessing from an upstream error.

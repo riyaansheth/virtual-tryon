@@ -529,6 +529,18 @@ const hairLayer = async (img) => {
   return layer
 }
 
+// Brave and Chrome refuse to navigate to a data: URL, and every result is one,
+// so the link gets a blob instead. The previous one is revoked to avoid a leak.
+let openUrl = null
+const linkResult = (src) => {
+  $('open').hidden = false
+  fetch(src).then((r) => r.blob()).then((blob) => {
+    if (openUrl) URL.revokeObjectURL(openUrl)
+    openUrl = URL.createObjectURL(blob)
+    $('open').href = openUrl
+  }).catch(() => { $('open').href = src })
+}
+
 /* ---------- render ---------- */
 const render = () => {
   if (!state.photoImg || !state.anchors) return
@@ -560,8 +572,7 @@ const render = () => {
   const out = $('out') || Object.assign(document.createElement('img'), { id: 'out' })
   out.src = state.result
   if (!out.parentElement) $('canvas').replaceChildren(out)
-  $('open').hidden = false
-  $('open').href = state.result
+  linkResult(state.result)
   $('reset').hidden = false
   $('tune').hidden = false
 }
@@ -726,8 +737,7 @@ $('place').addEventListener('click', async () => {
       const out = $('out') || Object.assign(document.createElement('img'), { id: 'out' })
       out.src = state.result
       if (!out.parentElement) $('canvas').replaceChildren(out)
-      $('open').hidden = false
-      $('open').href = state.result
+      linkResult(state.result)
       $('reset').hidden = false
       $('tune').hidden = true
       say(`<b>worn</b> · ${((Date.now() - t) / 1000).toFixed(1)}s`)

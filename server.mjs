@@ -215,9 +215,11 @@ export const handler = async (req, res) => {
     })
   }
 
-  // Everything that is not /api/* is the single-page console.
+  // Two single-page apps: /jewel is the jewellery product, everything else is
+  // the clothing console. Static routing only — neither generation path changes.
   if (!pathname.startsWith('/api/')) {
-    const html = await readFile(new URL('./public/index.html', import.meta.url))
+    const page = pathname.startsWith('/jewel') ? 'jewel.html' : 'index.html'
+    const html = await readFile(new URL(`./public/${page}`, import.meta.url))
     return send(res, 200, html, { 'content-type': 'text/html; charset=utf-8' })
   }
 

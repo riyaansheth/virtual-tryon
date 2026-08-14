@@ -261,7 +261,7 @@ button, input { font: inherit; color: inherit; }
 }
 /* pointer-events off so the image can never become the drag target and start a
    native image-drag, which silently kills the pointer stream mid-gesture. */
-.select img {
+.select .sel-photo {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -277,6 +277,13 @@ button, input { font: inherit; color: inherit; }
   border-radius: 2px;
   box-shadow: 0 0 0 9999px rgba(6, 5, 10, .58), 0 0 14px rgba(192, 132, 252, .45);
   pointer-events: none;
+}
+/* The piece previewed in place: what you position is what you get. */
+.sel-piece {
+  position: absolute;
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .45));
 }
 .sel-hint {
   position: absolute;
@@ -451,8 +458,9 @@ const COPY = {
     label: 'Add the jewellery',
     cue: 'Drop, click or paste a photo of the piece',
     head: 'Put the jewellery on the person.',
-    hint: 'Drag a box where the piece should sit',
-    box: { x: 0.24, y: 0.12, w: 0.52, h: 0.44 },
+    hint: 'Drag to place and size the piece',
+    // Chest height, wider than tall — roughly where a necklace sits.
+    box: { x: 0.32, y: 0.42, w: 0.36, h: 0.18 },
   },
 }
 
@@ -860,11 +868,10 @@ $('run').addEventListener('click', async () => {
       return
     }
 
-    // Send only the selected region, so the face and background are never at risk.
-    const region = await cropToBox(state.model, state.box)
+    // Clothing goes to the model whole — regenerating the figure is the point.
     const started_ = await call('/api/run', {
       mode: state.mode,
-      inputs: { model_image: region, garment_image: state.garment },
+      inputs: { model_image: state.model, garment_image: state.garment },
     })
 
     // Some providers answer straight away; others hand back an id to poll.
@@ -878,7 +885,7 @@ $('run').addEventListener('click', async () => {
     }
     if (!output) throw new Error('Finished without an image — try a different photo')
 
-    state.result = await pasteBack(state.model, output, state.box)
+    state.result = output
     state.editing = false
     show(state.result)
     $('status').innerHTML = `<b>done</b> · ${((Date.now() - started) / 1000).toFixed(1)}s`
@@ -897,7 +904,8 @@ $('run').addEventListener('click', async () => {
 /* ---------- what the stage shows ---------- */
 function renderStage() {
   if (state.result && !state.editing) return show(state.result)
-  if (state.model) return showSelector()
+  // Only jewellery is placed by hand; clothing needs no box.
+  if (state.model && state.mode === 'jewellery') return showSelector()
   $('canvas').replaceChildren(emptyState())
   $('rearea').hidden = true
   $('open').hidden = true
@@ -906,19 +914,31 @@ function renderStage() {
 function showSelector() {
   const wrap = document.createElement('div')
   wrap.className = 'select'
-  wrap.innerHTML = `<img alt="Your photo" draggable="false"><div class="sel-box"></div><div class="sel-hint"></div>`
-  const img = wrap.querySelector('img')
+  wrap.innerHTML = `<img class="sel-photo" alt="Your photo" draggable="false">
+    <img class="sel-piece" alt="" draggable="false" hidden>
+    <div class="sel-box"></div><div class="sel-hint"></div>`
+  const img = wrap.querySelector('.sel-photo')
   const rect = wrap.querySelector('.sel-box')
+  const preview = wrap.querySelector('.sel-piece')
   wrap.querySelector('.sel-hint').textContent = COPY[state.mode].hint
   img.onload = () => { wrap.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}` }
   img.src = state.model
 
+  // Show the actual piece in the box while it is being positioned — the same
+  // contain-and-centre maths the final composite uses, so this is not a guess.
+  if (state.piece) {
+    preview.src = state.piece
+    preview.hidden = false
+  }
+
   const paint = () => {
     const b = state.box
-    rect.style.left = `${b.x * 100}%`
-    rect.style.top = `${b.y * 100}%`
-    rect.style.width = `${b.w * 100}%`
-    rect.style.height = `${b.h * 100}%`
+    for (const el of [rect, preview]) {
+      el.style.left = `${b.x * 100}%`
+      el.style.top = `${b.y * 100}%`
+      el.style.width = `${b.w * 100}%`
+      el.style.height = `${b.h * 100}%`
+    }
   }
   paint()
 
@@ -1016,7 +1036,7 @@ function show(url) {
   box.addEventListener('pointermove', (e) => { if (box.hasPointerCapture(e.pointerId)) at(e.clientX) })
 
   $('canvas').replaceChildren(box)
-  $('rearea').hidden = false
+  $('rearea').hidden = state.mode !== 'jewellery'
   $('open').hidden = false
   // Chrome blocks top-level navigation to data: URLs, and every result is one
   // now, so hand the link a blob instead.

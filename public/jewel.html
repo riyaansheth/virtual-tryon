@@ -569,6 +569,7 @@ const render = () => {
 /* ---------- intake ---------- */
 const setPiece = async (value) => {
   state.pieceRaw = value
+  state.result = null
   $('dropPiece').classList.toggle('filled', Boolean(value))
   $('stepPiece').classList.toggle('done', Boolean(value))
   if (!value) { state.piece = null; state.pieceFlat = null; state.pieceImg = null; $('thumbPiece').src = ''; return sync() }
@@ -596,6 +597,7 @@ const setPhoto = async (value) => {
   state.photoImg = value ? await loadImage(value) : null
   state.anchors = null
   state.hair = null
+  state.result = null
   sync()
 }
 
@@ -652,9 +654,13 @@ const say = (message) => { $('status').className = 'status'; $('status').innerHT
 
 const sync = () => {
   const ready = Boolean(state.photo && state.piece)
+  const done = Boolean(state.anchors || state.result)
   $('place').disabled = !ready
-  $('place').textContent = ready ? (state.anchors ? 'Detect again' : 'Place the piece') : 'Add both images to start'
-  if (!state.anchors) {
+  $('place').textContent = ready ? (done ? 'Try again' : 'Place the piece') : 'Add both images to start'
+  // Only clear the stage when there is nothing to show. Worn mode sets a result
+  // without ever setting anchors, and this used to wipe the render it had just
+  // paid 60 seconds for.
+  if (!done) {
     $('tune').hidden = true
     $('reset').hidden = true
     if (!$('canvas').querySelector('.empty')) $('canvas').replaceChildren(emptyState())
@@ -665,8 +671,8 @@ function emptyState() {
   const el = document.createElement('div')
   el.className = 'empty'
   el.innerHTML = `<div class="empty-seam"></div>
-    <h2>Worn, not repainted.</h2>
-    <p>Your photo is never regenerated. The piece is measured onto it from your own proportions.</p>`
+    <h2>Try the piece on.</h2>
+    <p>Add the piece and a photo, then press Place. Worn renders it on the body; Instant places it on the photo untouched.</p>`
   return el
 }
 

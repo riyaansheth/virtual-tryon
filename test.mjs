@@ -1,6 +1,7 @@
 // Smallest check that fails if access control, rate limiting or routing breaks.
 // Run with: npm test   (deliberately runs WITHOUT .env loaded, so no key is set)
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 
 for (const k of ['FASHN_API_KEY', 'OPENAI_API_KEY']) {
   assert.equal(process.env[k], undefined, `run this without ${k} set`)
@@ -61,4 +62,45 @@ const openai = JSON.parse(child)
 assert.deepEqual(openai.key, { ok: true, provider: 'openai' }, 'an OpenAI key must win over no FASHN key')
 assert.equal(openai.polledStatus, 404, 'the synchronous provider has nothing to poll')
 
-console.log('ok — 15 checks passed')
+/* ---------- clothing must not move ---------- */
+// The jewellery branch keeps changing; clothing is not supposed to. Comparing the
+// prompt as source text catches an edit to it that no behavioural test would.
+const source = await readFile(new URL('./server.mjs', import.meta.url), 'utf8')
+const CLOTHING_PROMPT = `  clothing: [
+    'Dress the person in the first image in the garment shown in the second image.',
+    "Keep the person's face, hair, body shape, pose, skin tone and the background exactly as they are.",
+    'Replace only the clothing item that the garment corresponds to.',
+    "Reproduce the garment's colour, pattern, print, texture, neckline and cut faithfully.",
+    'Photorealistic result, with lighting and shadows consistent with the original photo.',
+  ].join(' '),`
+assert.ok(source.includes(CLOTHING_PROMPT), 'the clothing prompt must stay byte-identical')
+
+/* ---------- the harmonize path is wired ---------- */
+// Harmonizing sends one already-composited image, so the two-photo guard must not
+// fire on it — but it does still need the OpenAI provider. Checking that under a
+// FASHN key proves both without reaching the network.
+const jewelChild = execFileSync(
+  process.execPath,
+  ['--input-type=module', '-e', `
+    const { start } = await import(${JSON.stringify(new URL('./server.mjs', import.meta.url).href)})
+    const s = start(0)
+    const base = 'http://localhost:' + s.address().port
+    const post = async (body) => {
+      const r = await fetch(base + '/api/run', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
+      })
+      return { status: r.status, ...(await r.json()) }
+    }
+    const harmonize = await post({ mode: 'jewellery', harmonize: true, inputs: { model_image: 'data:image/png;base64,iVBORw0KGgo=' } })
+    const clothing = await post({ mode: 'clothing', inputs: { model_image: 'data:image/png;base64,iVBORw0KGgo=' } })
+    console.log(JSON.stringify({ harmonize, clothing }))
+    s.close()
+  `],
+  { env: { ...process.env, ACCESS_PASSWORD: '', FASHN_API_KEY: 'fa-not-a-real-key', RATE_LIMIT: '10' }, encoding: 'utf8' },
+)
+const jewel = JSON.parse(jewelChild)
+assert.notEqual(jewel.harmonize.error, 'MissingImage', 'harmonizing must not be asked for a second photo')
+assert.equal(jewel.harmonize.error, 'Unsupported', 'harmonizing without the OpenAI provider must say so')
+assert.equal(jewel.clothing.error, 'MissingImage', 'clothing still needs both photos')
+
+console.log('ok — 20 checks passed')

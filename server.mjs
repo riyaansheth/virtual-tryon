@@ -14,6 +14,11 @@ const OPENAI_SIZE = process.env.OPENAI_IMAGE_SIZE
 // Jewellery renders at high quality; the size is computed per photo by the
 // client so framing survives. Clothing is deliberately not affected by these.
 const JEWEL_QUALITY = process.env.JEWEL_IMAGE_QUALITY || 'high'
+// Harmonizing is a cheaper job than drawing. The 3.1MP/high pairing exists so a
+// chain link has pixels to be drawn with — but here the links are already ours
+// and only the lighting is taken from the response, so the resolution that
+// mattered no longer does.
+const HARMONIZE_QUALITY = process.env.JEWEL_HARMONIZE_QUALITY || 'medium'
 // Small, fast and vision-capable — this only has to read one word.
 const IDENTIFY_MODEL = process.env.IDENTIFY_MODEL || 'gpt-4.1-mini'
 const FASHN_MODEL = process.env.FASHN_MODEL || 'tryon-v1.6'
@@ -127,6 +132,18 @@ const jewelleryPrompt = (kind) => [
   'Photorealistic, with metal reflections and shadows consistent with the original lighting.',
 ].join(' ')
 
+// A different job from the one above, and the reason this branch exists. The
+// piece is already composited in at the measured position, so the model is not
+// being asked to invent or draw jewellery — only to light what is already
+// there. Asking for less is what stops it redesigning the product.
+const HARMONIZE_PROMPT = [
+  'This photograph already contains the piece of jewellery, composited in at the correct position and size.',
+  'Adjust only how it is lit: its reflections and highlights, the shadow it casts on the skin, and where it meets the skin.',
+  'Do not change its shape, design, proportions, position, size or the number of parts it has.',
+  'Do not change the person, their pose, their skin, their clothing or the background.',
+  'The result should look like the piece was photographed on them in this light.',
+].join(' ')
+
 const toBlob = async (src) => {
   if (src.startsWith('data:')) {
     const [meta, base64] = src.split(',')
@@ -214,23 +231,32 @@ const identify = async (image, res) => {
 }
 
 const openaiRun = async (inputs, mode, res, opts = {}) => {
+  const harmonize = mode === 'jewellery' && opts.harmonize
   const form = new FormData()
   form.append('model', OPENAI_MODEL)
-  form.append('prompt', mode === 'jewellery' ? jewelleryPrompt(opts.kind) : PROMPTS.clothing)
+  form.append('prompt', harmonize ? HARMONIZE_PROMPT : mode === 'jewellery' ? jewelleryPrompt(opts.kind) : PROMPTS.clothing)
   if (mode === 'jewellery') {
     // A chain's identity lives in detail a few pixels wide. At the ~1024px the
     // API picks by default there is no room to draw a link, so it renders
     // chain-like texture instead. Ask for the pixels, and the quality tier that
     // uses them. Size comes from the client so the photo's framing is kept.
-    form.append('quality', JEWEL_QUALITY)
+    form.append('quality', harmonize ? HARMONIZE_QUALITY : JEWEL_QUALITY)
     if (opts.size) form.append('size', opts.size)
   } else {
     // Clothing: unchanged. Nothing is sent unless it is explicitly configured.
     if (OPENAI_QUALITY) form.append('quality', OPENAI_QUALITY)
     if (OPENAI_SIZE) form.append('size', OPENAI_SIZE)
   }
-  form.append('image[]', await toBlob(inputs.model_image), 'person.png')
-  form.append('image[]', await toBlob(inputs.garment_image), 'garment.png')
+  if (harmonize) {
+    // One image only. The product is already in the composite, so sending the
+    // product shot as well would just invite the model to redraw from it — and
+    // a mask only ever applies to the first image anyway.
+    form.append('image[]', await toBlob(inputs.model_image), 'composite.png')
+    if (inputs.mask) form.append('mask', await toBlob(inputs.mask), 'mask.png')
+  } else {
+    form.append('image[]', await toBlob(inputs.model_image), 'person.png')
+    form.append('image[]', await toBlob(inputs.garment_image), 'garment.png')
+  }
 
   // Without this a stalled upstream leaves the browser waiting forever behind a
   // progress bar that can only creep toward 100%.
@@ -307,11 +333,16 @@ export const handler = async (req, res) => {
 
   // The client sends only the two images; provider-specific payloads are built here.
   if (pathname === '/api/run') {
-    const { inputs = {}, mode = 'clothing', size, kind } = JSON.parse(await readBody(req, res))
-    if (!inputs.model_image || !inputs.garment_image) {
+    const { inputs = {}, mode = 'clothing', size, kind, harmonize } = JSON.parse(await readBody(req, res))
+    // Harmonizing sends one already-composited image, so there is no second
+    // photo to require. Every other path still needs both.
+    if (!inputs.model_image || (!inputs.garment_image && !harmonize)) {
       return err(res, 400, 'MissingImage', 'Both photos are required.')
     }
-    return PROVIDER === 'openai' ? openaiRun(inputs, mode, res, { size, kind }) : fashnRun(inputs, mode, res)
+    if (harmonize && PROVIDER !== 'openai') {
+      return err(res, 400, 'Unsupported', 'Harmonizing needs the OpenAI provider.')
+    }
+    return PROVIDER === 'openai' ? openaiRun(inputs, mode, res, { size, kind, harmonize }) : fashnRun(inputs, mode, res)
   }
 
   if (PROVIDER === 'openai') {

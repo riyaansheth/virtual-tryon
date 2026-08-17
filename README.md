@@ -1,7 +1,17 @@
 # Dizrupt Try-On
 
 Virtual try-on: add a garment, add a photo, get the person wearing it.
-Zero dependencies — Node's stdlib http server, one HTML file.
+Zero dependencies — Node's stdlib http server, one HTML file per product.
+
+Two products, two different problems:
+
+- **`/`** — clothing. A garment's identity is its colour, silhouette and print, and
+  a model that redraws the whole photo keeps those, so it hands the model
+  everything and shows what comes back.
+- **`/jewel`** — jewellery. A chain's identity is a few pixels wide, and no model
+  reliably reproduces it, so this one never asks a model to draw the piece. The
+  real product pixels are measured into place and only their *lighting* is ever
+  generated. See [Jewels](#jewels).
 
 ## Setup
 
@@ -34,6 +44,9 @@ existing key, FASHN is the better tool for the job.
 |---|---|---|
 | `OPENAI_API_KEY` | — | Use OpenAI as the provider. Server-side only. |
 | `OPENAI_IMAGE_MODEL` | `gpt-image-2` | Override if your account has different image models enabled. |
+| `JEWEL_IMAGE_QUALITY` | `high` | Quality for the jewellery whole-photo path. |
+| `JEWEL_HARMONIZE_QUALITY` | `medium` | Quality for Polished. Lower than above on purpose: this pass only supplies light, not detail. |
+| `IDENTIFY_MODEL` | `gpt-4.1-mini` | Reads which kind of piece a product photo shows. |
 | `FASHN_API_KEY` | — | Use FASHN as the provider. Server-side only. |
 | `ACCESS_PASSWORD` | unset (open) | Required before deploying. Basic auth on every route — the browser prompts; leave the username blank. |
 | `PORT` | `3000` | |
@@ -70,13 +83,46 @@ ones. The OpenAI prompt lives in `server.mjs` as `TRY_ON_PROMPT`.
 Inputs larger than 1536px are downscaled in the browser before upload. Small PNGs
 pass through untouched so transparent flat-lays keep their alpha.
 
+## Jewels
+
+At `/jewel`. Add the piece, add the photo, press **Try it on**. The kind of piece
+is read from the product shot, and the four buttons override it if that is wrong.
+
+It runs in three layers, and each one is a place you can stop:
+
+| | What it does | Cost | Result |
+|---|---|---|---|
+| **Placed** | MediaPipe landmarks measure the body, the backdrop is flood-filled off the product, and the piece is scaled and angled from measured distances — shoulder span for a necklace, jaw width for earrings, the ring finger's knuckle-to-joint axis for a ring. Hair is segmented and redrawn over the top so a chain passes behind it. | ~0.7s, free | Exact, and flat |
+| **Natural** | Five local passes: the piece takes on the luminance gradient and light colour of the skin around it, gains a contact shadow offset away from the light, and is matched to the photo's grain and focus. | +0.2s, free | Exact, and plausible. **The default.** |
+| **Polished** | The composite goes to `gpt-image-2` with a mask, asking only for lighting. | ~1 min, billed | Exact, and photographic |
+
+Nothing leaves the browser on the first two layers.
+
+**Why Polished can be trusted.** OpenAI's own support says `gpt-image` ignores
+`mask` and regenerates the whole image, so the mask is treated as a request and
+the guarantee is enforced locally on the response instead. Outside the editable
+region our own pixels are kept, byte for byte. Inside it, light is accepted as a
+**luminance ratio**, never a per-channel delta — because light scales
+reflectance, it does not add colour. A response that paints a magenta stripe
+across the piece can therefore make it darker or lighter and nothing else;
+measured, that stripe moves the product's hue by 1.5°. Past a threshold on how
+far the brightness or colour moved, the local render is kept instead and the
+status line says so.
+
+Sliders adjust size and turn, dragging the photo nudges the piece, and the
+finishing passes toggle individually — all of which re-run locally, so no slider
+ever spends a credit. `?debug` exposes the pipeline on `window.jewels` for
+building an eval set.
+
 ## Server routes
 
 | Route | Behaviour |
 |---|---|
 | `GET /*` | serves `public/index.html` |
+| `GET /jewel*` | serves `public/jewel.html` |
 | `GET /api/_key` | `{ ok, provider }` — is a key configured, and whose |
-| `POST /api/run` | Starts a try-on. Returns the finished image (OpenAI) or an id to poll (FASHN). |
+| `POST /api/identify` | `{ kind }` — which of the four kinds a product photo shows. OpenAI only. |
+| `POST /api/run` | Starts a try-on. Returns the finished image (OpenAI) or an id to poll (FASHN). `mode: 'jewellery'` picks the jewellery prompt; adding `harmonize: true` sends one already-composited image plus a `mask` and asks only for lighting. |
 | `* /api/<path>` | FASHN only: proxied to `https://api.fashn.ai/v1/<path>` with the key attached |
 
 The FASHN proxy is generic, so any of its endpoints work without server changes
@@ -89,3 +135,7 @@ The FASHN proxy is generic, so any of its endpoints work without server changes
 - OpenAI: edits are billed per generated image whether or not you like the
   result. Check current rates on OpenAI's pricing page.
 - Request bodies are capped at 25 MB by the proxy.
+- Jewels' first two layers cost nothing and never call out. Only **Polished**
+  spends credits, and only when you press the button — not on a slider drag.
+- Jewels downloads the MediaPipe models from a CDN the first time you press Try
+  it on, and caches them after. Rings and bracelets skip hair segmentation.

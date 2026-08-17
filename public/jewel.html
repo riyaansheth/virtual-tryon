@@ -264,6 +264,8 @@ const MODELS = {
 // selfie_multiclass: 0 background, 1 hair, 2 body-skin, 3 face-skin, 4 clothes, 5 others
 const HAIR = 1
 const BACKGROUND = 0
+const BODY_SKIN = 2
+const FACE_SKIN = 3
 
 // Face-mesh indices used for measurement, not decoration.
 const CHIN = 152
@@ -312,6 +314,7 @@ const state = {
   anchors: null,
   hair: null,            // the photo's hair, to redraw over the piece
   person: null,          // silhouette, so a cast shadow cannot land on the wall
+  skin: null,            // skin only, for reading the light off the right surface
   scale: 1, turn: 0, nudge: { x: 0, y: 0 },
   passes: { light: true, shadow: true, focus: true, grain: true, bounce: true },
   base: null,            // the local composite, as a data URL
@@ -607,6 +610,11 @@ const measure = async (img) => {
       angle: shoulders.angle,
       anchorTop: true,
       chinY: chin.y,
+      // How far it may hang. A flat-lay is photographed as a wide open loop, so
+      // its own proportions say nothing about how far down a body it reaches —
+      // matched on width alone, a near-square packshot runs off the chest.
+      // Chin-to-shoulder is the ruler a short necklace is actually cut to.
+      maxHeight: (midY - chin.y) * 1.0,
     }]
   }
   // Face-only fallback: the jaw is the only ruler available.
@@ -617,6 +625,7 @@ const measure = async (img) => {
     angle: jawAngle,
     anchorTop: true,
     chinY: chin.y,
+    maxHeight: faceWidth * 0.55,
   }]
 }
 
@@ -645,6 +654,9 @@ const segment = async (img) => {
 
   const hairMask = layerOf((v) => v === HAIR)
   const person = layerOf((v) => v !== BACKGROUND)
+  // Skin only, for reading the light. A dark top in the sample drags the
+  // measured exposure down and the piece gets darkened to match a t-shirt.
+  const skin = layerOf((v) => v === BODY_SKIN || v === FACE_SKIN)
   mask.close()
 
   const hair = canvasOf(img.naturalWidth, img.naturalHeight)
@@ -652,7 +664,7 @@ const segment = async (img) => {
   hctx.drawImage(img, 0, 0)
   hctx.globalCompositeOperation = 'destination-in'
   hctx.drawImage(hairMask, 0, 0)
-  return { hair, person }
+  return { hair, person, skin }
 }
 
 /* ---------- layer 1: place the piece ---------- */
@@ -665,8 +677,13 @@ const buildPieceLayer = () => {
   const piece = state.pieceImg
   const ratio = piece.naturalHeight / piece.naturalWidth
   for (const a of state.anchors) {
-    const w = a.width * state.scale
-    const h = w * ratio
+    // Contain, not width-match: whichever of the two measured limits binds first.
+    let w = a.width * state.scale
+    let h = w * ratio
+    if (a.maxHeight && h > a.maxHeight * state.scale) {
+      h = a.maxHeight * state.scale
+      w = h / ratio
+    }
     ctx.save()
     ctx.translate(a.cx + state.nudge.x, a.cy + state.nudge.y)
     ctx.rotate(a.angle + (state.turn * Math.PI) / 180)
@@ -743,7 +760,23 @@ const surroundStats = (box) => {
   ac.getContext('2d').drawImage(state.pieceLayer, -x, -y)
   const ad = ctxOf(ac).getImageData(0, 0, w, h).data
 
-  const free = (i) => ad[i + 3] < 8
+  // Read the light off skin where we know where the skin is. A necklace sits
+  // above a dark top as often as not, and sampling that top makes the photo look
+  // several stops darker than the body actually is — which then darkens the
+  // piece to match a t-shirt instead of a collarbone.
+  let sd = null
+  if (state.skin) {
+    const sc = canvasOf(w, h)
+    sc.getContext('2d').drawImage(state.skin, -x, -y)
+    const cand = ctxOf(sc).getImageData(0, 0, w, h).data
+    let count = 0
+    for (let i = 0; i < cand.length; i += 4) if (cand[i + 3] > 128 && ad[i + 3] < 8) count++
+    if (count >= 400) sd = cand              // enough skin nearby to be worth trusting
+  }
+
+  const free = sd
+    ? (i) => ad[i + 3] < 8 && sd[i + 3] > 128
+    : (i) => ad[i + 3] < 8
   let n = 0, sr = 0, sg = 0, sb = 0, sl = 0, sx = 0, sy = 0
   for (let i = 0; i < pd.length; i += 4) {
     if (!free(i)) continue
@@ -850,14 +883,39 @@ const contactShadow = (target, layer, box, s) => {
   tc.restore()
 }
 
+// How thick the piece actually is, as twice its area over its edge length. A
+// hairline chain measures 1-2 here and a signet ring 20+.
+const strokeWidth = (layer, box) => {
+  const d = ctxOf(layer).getImageData(box.x, box.y, box.w, box.h).data
+  let area = 0, edge = 0
+  for (let y = 1; y < box.h - 1; y++) {
+    for (let x = 1; x < box.w - 1; x++) {
+      const i = (y * box.w + x) * 4
+      if (d[i + 3] < 128) continue
+      area++
+      if (d[i - 4 + 3] < 128 || d[i + 4 + 3] < 128 ||
+          d[i - box.w * 4 + 3] < 128 || d[i + box.w * 4 + 3] < 128) edge++
+    }
+  }
+  return edge ? (2 * area) / edge : 99
+}
+
 // A too-crisp, noise-free object on a phone photo reads as a sticker even when
 // the colour and the shadow are right. One blur does both jobs: matching the
 // photo's focus, and feathering the cutout's edge.
+//
+// But it must never touch thin work. A chain two pixels wide blurred by one is
+// erased, and erasing the product to make it sit better in the light is the
+// worst trade available here. Thickness decides, not sharpness.
 const softenRadius = (scene, layer, box) => {
+  const thick = strokeWidth(layer, box)
+  if (thick < 5) return 0                                  // hairline: leave it alone
   const d = ctxOf(layer).getImageData(box.x, box.y, box.w, box.h).data
   const own = freqStats(d, box.w, box.h, (i) => d[i + 3] > 250)
   if (!own.acuity || !scene.acuity) return 0.4
-  return Math.max(0.35, Math.min(1.6, 0.35 + (own.acuity / scene.acuity - 1) * 0.45))
+  const want = Math.max(0.35, Math.min(1.6, 0.35 + (own.acuity / scene.acuity - 1) * 0.45))
+  // Fade the blur in over the thicknesses where it starts being affordable.
+  return want * Math.min(1, (thick - 5) / 5)
 }
 
 const soften = (layer, px) => {
@@ -950,7 +1008,7 @@ const compose = () => {
 // is where the shadow has to go.
 const buildMask = (layer, box) => {
   const W = layer.width, H = layer.height
-  const grow = Math.max(4, Math.min(box.w, box.h) * 0.12)
+  const grow = Math.max(4, Math.min(box.w, box.h) * 0.06)
   const sil = canvasOf(W, H)
   const sc = sil.getContext('2d')
   sc.filter = `blur(${grow}px)`
@@ -1008,14 +1066,29 @@ const enforce = async (returnedSrc, box) => {
   const rawG = crop(got)
   const pieceA = crop(state.pieceLayer)
   const editA = crop(state.editable)
+  // A contact shadow hugs the thing casting it. Without this, the editable
+  // region is a licence to paint anywhere inside it, and a model will: it drew a
+  // free-floating dark loop beside the pendant, which "accept the darkening"
+  // waved straight through because darkening is what a shadow looks like.
+  // Proximity is the difference between a shadow and a doodle.
+  const reach = Math.max(3, Math.min(box.w, box.h) * 0.035)
+  const nearA = crop(blurred(state.pieceLayer, reach))
 
   const outCtx = ctxOf(base)
   const img = outCtx.getImageData(box.x, box.y, box.w, box.h)
   const d = img.data
   let drift = 0, chromaDrift = 0, n = 0
+  let outside = 0, outsideN = 0
 
   for (let i = 0; i < d.length; i += 4) {
-    if (editA[i + 3] === 0) continue                  // outside the editable region: ours, untouched
+    if (editA[i + 3] === 0) {
+      // Ours, untouched — but worth measuring on the way past. This is the mask
+      // reality check, run on every single request rather than once: how much did
+      // the provider change where we told it not to?
+      outside += (Math.abs(rawG[i] - d[i]) + Math.abs(rawG[i + 1] - d[i + 1]) + Math.abs(rawG[i + 2] - d[i + 2])) / 3
+      outsideN++
+      continue
+    }
     if (pieceA[i + 3] > 8) {
       const lb = Math.max(4, LUM(bd, i))
       const lg = LUM(gd, i)
@@ -1033,16 +1106,26 @@ const enforce = async (returnedSrc, box) => {
       n++
     } else {
       // Bare skin inside the region. The shadow is welcome and it is a
-      // darkening; the raw response is used so a crisp shadow stays crisp.
+      // darkening; the raw response is used so a crisp shadow stays crisp. How
+      // much of it is accepted falls off with distance from the piece, so a
+      // shadow lands and an invention a few pixels away does not.
+      const near = nearA[i + 3] / 255
+      if (near < 0.02) continue
       const lb = Math.max(4, LUM(d, i))
-      const ratio = Math.min(LIFT, Math.max(0.35, LUM(rawG, i) / lb))
+      const raw = Math.min(LIFT, Math.max(0.35, LUM(rawG, i) / lb))
+      const ratio = 1 + (raw - 1) * near
       d[i] = clamp255(d[i] * ratio)
       d[i + 1] = clamp255(d[i + 1] * ratio)
       d[i + 2] = clamp255(d[i + 2] * ratio)
     }
   }
   outCtx.putImageData(img, box.x, box.y)
-  return { canvas: base, drift: n ? drift / n : 0, chroma: n ? chromaDrift / n : 0 }
+  return {
+    canvas: base,
+    drift: n ? drift / n : 0,
+    chroma: n ? chromaDrift / n : 0,
+    outside: outsideN ? outside / outsideN : 0,
+  }
 }
 
 /* ---------- status ---------- */
@@ -1178,6 +1261,7 @@ const setPhoto = async (value) => {
   state.anchors = null
   state.hair = null
   state.person = null
+  state.skin = null
   $('dropPhoto').classList.toggle('filled', Boolean(value))
   $('stepPhoto').classList.toggle('done', Boolean(value))
   $('thumbPhoto').src = value || ''
@@ -1284,9 +1368,10 @@ $('place').addEventListener('click', async () => {
       $('turn').value = 0
       if (!['ring', 'bracelet'].includes(state.kind)) {
         working('separating hair', 70)
-        const seg = await segment(state.photoImg).catch(() => ({ hair: null, person: null }))
+        const seg = await segment(state.photoImg).catch(() => ({ hair: null, person: null, skin: null }))
         state.hair = seg.hair
         state.person = seg.person
+        state.skin = seg.skin
       }
     }
 
@@ -1305,7 +1390,7 @@ $('place').addEventListener('click', async () => {
     // what is left to check is degree: a relight that moves the piece's
     // brightness by a third, or drags real colour into it, was not a relight.
     // Past either line the honest thing is to keep the local render and say so.
-    const { drift, chroma } = out
+    const { drift, chroma, outside } = out
     if (drift > 35 || chroma > 30) {
       showResult(state.base)
       state.polished = false
@@ -1313,7 +1398,9 @@ $('place').addEventListener('click', async () => {
     }
     state.polished = true
     showResult(out.canvas.toDataURL('image/png'))
-    say(`<b>polished</b> · ${((Date.now() - t) / 1000).toFixed(1)}s · light ${drift.toFixed(0)}% · colour ${chroma.toFixed(0)}`)
+    // `outside` is how far the provider strayed beyond the mask, discarded here
+    // but reported: it is the one number that says whether the mask is honoured.
+    say(`<b>polished</b> · ${((Date.now() - t) / 1000).toFixed(1)}s · light ${drift.toFixed(0)}% · colour ${chroma.toFixed(0)} · discarded ${outside.toFixed(0)} outside the mask`)
   } catch (e) {
     fail(e.message)
     if (!state.result) $('canvas').replaceChildren(emptyState())
@@ -1371,6 +1458,10 @@ if (new URLSearchParams(location.search).has('debug')) {
   window.jewels = {
     state, compose, measure, segment, surroundStats, alphaBounds, buildPieceLayer,
     buildMask, enforce, freqStats, cutout, loadImage, showResult, canvasOf,
+    // The real intake path, for driving a case without a file picker: the file
+    // inputs are created on demand and never live in the DOM, so nothing else
+    // can reach them.
+    setPiece, setPhoto, shrink, polish, setKind,
     // Place at a given point without landmarks, for photos with no face in them.
     fake: (cx, cy, width, extra = {}) => {
       state.anchors = [{ cx, cy, width, angle: 0, anchorTop: true, ...extra }]
